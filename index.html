@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Green desktop</title>
+<style>
+  :root {
+    --bg: #cfd1cb;
+    --fg: #1d201b;
+    --muted: #50564c;
+    --bezel: #bdb8aa;
+    --bezel-edge: #a39e90;
+    --btn: rgba(29, 32, 27, 0.07);
+    --btn-on: rgba(29, 32, 27, 0.15);
+    --focus: #1d201b;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141613; --fg: #dcdfd6; --muted: #9ba193;
+      --bezel: #2c2d29; --bezel-edge: #3b3c37;
+      --btn: rgba(220, 223, 214, 0.08); --btn-on: rgba(220, 223, 214, 0.17);
+      --focus: #dcdfd6; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141613; --fg: #dcdfd6; --muted: #9ba193;
+    --bezel: #2c2d29; --bezel-edge: #3b3c37;
+    --btn: rgba(220, 223, 214, 0.08); --btn-on: rgba(220, 223, 214, 0.17);
+    --focus: #dcdfd6; color-scheme: dark;
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  html { height: 100%; scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--fg);
+    font-family: "Helvetica Neue", "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  .stage {
+    height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 22px; padding: 16px;
+  }
+  .monitor {
+    position: relative; border-radius: 10px; background: #000; line-height: 0; overflow: hidden;
+    box-shadow: 0 0 0 10px var(--bezel), 0 0 0 11px var(--bezel-edge), 0 18px 44px rgba(0, 0, 0, 0.35);
+  }
+  .monitor.kbd {
+    box-shadow: 0 0 0 10px var(--bezel), 0 0 0 13px var(--focus), 0 18px 44px rgba(0, 0, 0, 0.35);
+  }
+  #screen { display: block; cursor: none; touch-action: none; outline: none; }
+  .scan {
+    position: absolute; inset: 0; pointer-events: none;
+    background:
+      linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,0) 50%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.2) 100%),
+      radial-gradient(ellipse at center, rgba(0,0,0,0) 62%, rgba(0,0,0,0.3) 100%);
+    background-size: 100% calc(100% / 200), 100% 100%;
+    transition: opacity 0.2s;
+  }
+  .monitor.flat .scan { opacity: 0; }
+  .foot {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+    gap: 10px 18px; max-width: min(92vw, 760px);
+    font-size: 0.9rem; line-height: 1.4; color: var(--muted); text-align: center;
+  }
+  .foot p { margin: 0; }
+  .foot strong { color: var(--fg); font-weight: 600; }
+  .toggles { display: flex; gap: 6px; }
+  .toggles button {
+    font: inherit; font-size: 0.85rem; color: var(--fg); background: var(--btn);
+    border: 0; border-radius: 8px; padding: 6px 11px; cursor: pointer;
+  }
+  .toggles button[aria-pressed="true"] { background: var(--btn-on); }
+  .toggles button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .scan { transition: none; } }
+</style>
+</head>
+<body>
+<main class="stage" id="stage">
+  <div class="monitor" id="monitor">
+    <canvas id="screen" tabindex="0" width="640" height="400"
+      aria-label="A retro GEM-style desktop. Double-click Floppy disk A, then DEMO.EXE, to run a bouncing ball demo. With the screen focused, arrow keys select icons, Enter opens, Escape closes."></canvas>
+    <div class="scan" aria-hidden="true"></div>
+  </div>
+  <footer class="foot" id="foot">
+    <p>Double-click <strong>Floppy disk A</strong>, then <strong>DEMO.EXE</strong>. Menus drop down when you point at them.</p>
+    <div class="toggles">
+      <button id="sndBtn" aria-pressed="true">Sound on</button>
+      <button id="scanBtn" aria-pressed="true">Scanlines on</button>
+    </div>
+  </footer>
+</main>
+
+<script>
+(() => {
+"use strict";
+const TAU = Math.PI * 2;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+/* ======================= Font (public-domain 8x8) ======================= */
+const FONT_HEX = "0000000000000000183c3c1818001800363600000000000036367f367f3636000c3e031e301f0c00006333180c6663001c361c6e3b336e000606030000000000180c0606060c1800060c1818180c060000663cff3c660000000c0c3f0c0c000000000000000c0c060000003f0000000000000000000c0c006030180c060301003e63737b6f673e000c0e0c0c0c0c3f001e33301c06333f001e33301c30331e00383c36337f3078003f031f3030331e001c06031f33331e003f3330180c0c0c001e33331e33331e001e33333e30180e00000c0c00000c0c00000c0c00000c0c06180c0603060c180000003f00003f0000060c1830180c06001e3330180c000c003e637b7b7b031e000c1e33333f3333003f66663e66663f003c66030303663c001f36666666361f007f46161e16467f007f46161e16060f003c66030373667c003333333f333333001e0c0c0c0c0c1e007830303033331e006766361e366667000f06060646667f0063777f7f6b63630063676f7b736363001c36636363361c003f66663e06060f001e3333333b1e38003f66663e366667001e33070e38331e003f2d0c0c0c0c1e003333333333333f0033333333331e0c006363636b7f7763006363361c1c3663003333331e0c0c1e007f6331184c667f001e06060606061e0003060c18306040001e18181818181e00081c36630000000000000000000000ff0c0c18000000000000001e303e336e000706063e66663b0000001e3303331e003830303e33336e0000001e333f031e001c36060f06060f0000006e33333e301f0706366e666667000c000e0c0c0c1e00300030303033331e070666361e3667000e0c0c0c0c0c1e000000337f7f6b630000001f333333330000001e3333331e0000003b66663e060f00006e33333e307800003b6e66060f0000003e031e301f00080c3e0c0c2c18000000333333336e0000003333331e0c000000636b7f7f3600000063361c36630000003333333e301f00003f190c263f00380c0c070c0c38001818180018181800070c0c380c0c07006e3b000000000000";
+const FONT = new Uint8Array(128 * 8);
+for (let c = 32; c < 127; c++)
+  for (let r = 0; r < 8; r++)
+    FONT[c * 8 + r] = parseInt(FONT_HEX.substr(((c - 32) * 8 + r) * 2, 2), 16);
+function glyph(code, rows) {
+  rows.forEach((s, r) => { let b = 0; for (let i = 0; i < 8; i++) if (s[i] === "#") b |= 1 << i; FONT[code * 8 + r] = b; });
+}
+glyph(1, ["...#....", "..###...", ".#####..", "#######.", "..###...", "..###...", "..###...", "........"]); // up
+glyph(2, ["..###...", "..###...", "..###...", "#######.", ".#####..", "..###...", "...#....", "........"]); // down
+glyph(3, ["...#....", "..##....", ".#######", "########", ".#######", "..##....", "...#....", "........"]); // left
+glyph(4, ["....#...", "....##..", "#######.", "########", "#######.", "....##..", "....#...", "........"]); // right
+glyph(5, ["........", "......##", ".....##.", "##..##..", ".####...", "..##....", "........", "........"]); // check
+glyph(6, ["##....##", ".##..##.", "..####..", "...##...", "..####..", ".##..##.", "##....##", "........"]); // closer
+glyph(7, ["########", "#......#", "#.####.#", "#.#..#.#", "#.####.#", "#......#", "########", "........"]); // fuller
+glyph(8, ["####....", "#..#....", "#..#####", "####...#", "...#...#", "...#...#", "...#####", "........"]); // sizer
+glyph(9, ["...#....", "..###...", ".#####..", "#######.", ".#####..", "..###...", "...#....", "........"]); // folder mark
+
+/* ======================= Screen & palette ======================= */
+const WHITE = 0, RED = 1, GREEN = 2, BLACK = 3;
+const DEFAULT_DESK = [0, 7, 0];
+const palRGB = [[7, 7, 7], [7, 0, 0], DEFAULT_DESK.slice(), [0, 0, 0]];
+const lvl = v => Math.round(v * 255 / 7);
+const rgb32 = (r, g, b) => (0xff000000 | (lvl(b) << 16) | (lvl(g) << 8) | lvl(r)) >>> 0;
+const pal32 = new Uint32Array(4);
+function updatePal() { for (let i = 0; i < 4; i++) pal32[i] = rgb32(palRGB[i][0], palRGB[i][1], palRGB[i][2]); }
+const ST9 = new Uint32Array(512);
+for (let r = 0; r < 8; r++) for (let g = 0; g < 8; g++) for (let b = 0; b < 8; b++) ST9[r * 64 + g * 8 + b] = rgb32(r, g, b);
+const q7 = v => (v < 0 ? 0 : v > 7 ? 7 : v | 0);
+const c9 = (r, g, b) => ST9[q7(r) * 64 + q7(g) * 8 + q7(b)];
+
+const screenEl = document.getElementById("screen");
+const vctx = screenEl.getContext("2d");
+const small = document.createElement("canvas");
+const sctx = small.getContext("2d");
+let SW = 640, SH = 200, fb, img, img32;
+let cx0 = 0, cy0 = 0, cx1 = 640, cy1 = 200;
+
+function setRes(w, h) {
+  SW = w; SH = h; small.width = w; small.height = h;
+  img = sctx.createImageData(w, h); img32 = new Uint32Array(img.data.buffer);
+  fb = new Uint8Array(w * h); noclip();
+}
+function blit() {
+  sctx.putImageData(img, 0, 0);
+  vctx.imageSmoothingEnabled = false;
+  vctx.drawImage(small, 0, 0, screenEl.width, screenEl.height);
+}
+function presentIndexed() { for (let i = 0, n = fb.length; i < n; i++) img32[i] = pal32[fb[i]]; blit(); }
+
+/* ======================= Drawing primitives ======================= */
+function noclip() { cx0 = 0; cy0 = 0; cx1 = SW; cy1 = SH; }
+function clip(x, y, w, h) { cx0 = Math.max(0, x); cy0 = Math.max(0, y); cx1 = Math.min(SW, x + w); cy1 = Math.min(SH, y + h); }
+function fill(x, y, w, h, c) {
+  const x0 = Math.max(cx0, x), x1 = Math.min(cx1, x + w), y0 = Math.max(cy0, y), y1 = Math.min(cy1, y + h);
+  if (x1 <= x0 || y1 <= y0) return;
+  for (let yy = y0; yy < y1; yy++) fb.fill(c, yy * SW + x0, yy * SW + x1);
+}
+function pset(x, y, c) { if (x >= cx0 && x < cx1 && y >= cy0 && y < cy1) fb[y * SW + x] = c; }
+const hline = (x, y, w, c) => fill(x, y, w, 1, c);
+const vline = (x, y, h, c) => fill(x, y, 1, h, c);
+function rect(x, y, w, h, c) { hline(x, y, w, c); hline(x, y + h - 1, w, c); vline(x, y, h, c); vline(x + w - 1, y, h, c); }
+function each(x, y, w, h, fn) {
+  const x0 = Math.max(cx0, x), x1 = Math.min(cx1, x + w), y0 = Math.max(cy0, y), y1 = Math.min(cy1, y + h);
+  for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) fn(yy * SW + xx, xx, yy);
+}
+const checker = (x, y, w, h, a, b) => each(x, y, w, h, (i, xx, yy) => { fb[i] = ((xx + yy) & 1) ? a : b; });
+const dots = (x, y, w, h, a, b) => each(x, y, w, h, (i, xx, yy) => { fb[i] = ((xx & 1) === 0 && ((yy + (xx >> 1)) & 1) === 0) ? a : b; });
+const invert = (x, y, w, h) => each(x, y, w, h, i => { fb[i] ^= 3; });
+const dim = (x, y, w, h) => each(x, y, w, h, (i, xx, yy) => { if (((xx + yy) & 1) === 0 && fb[i] === BLACK) fb[i] = WHITE; });
+function xp(x, y) { if (x >= cx0 && x < cx1 && y >= cy0 && y < cy1) fb[y * SW + x] ^= 3; }
+function xorDotRect(x, y, w, h) {
+  x |= 0; y |= 0; w |= 0; h |= 0;
+  for (let i = 0; i < w; i += 2) { xp(x + i, y); xp(x + i, y + h - 1); }
+  for (let j = 2; j < h - 1; j += 2) { xp(x, y + j); xp(x + w - 1, y + j); }
+}
+function text(x, y, s, fg, bg) {
+  for (let i = 0; i < s.length; i++) {
+    let code = s.charCodeAt(i); if (code > 127) code = 63;
+    const gx = x + i * 8;
+    if (bg !== undefined && bg !== null) fill(gx, y, 8, 8, bg);
+    for (let r = 0; r < 8; r++) {
+      const bits = FONT[code * 8 + r]; if (!bits) continue;
+      for (let b = 0; b < 8; b++) if ((bits >> b) & 1) pset(gx + b, y + r, fg);
+    }
+  }
+}
+function bitmap(rows, w) {
+  w = w || 32;
+  const d = new Uint8Array(w * rows.length);
+  rows.forEach((s, r) => { for (let c = 0; c < w; c++) { const ch = s[c]; d[r * w + c] = (ch === "#" || ch === "B") ? 1 : (ch === "." || ch === "W") ? 2 : 0; } });
+  return { w, h: rows.length, d };
+}
+function drawBM(bm, x, y, c1, c2) {
+  for (let r = 0; r < bm.h; r++) for (let c = 0; c < bm.w; c++) {
+    const v = bm.d[r * bm.w + c];
+    if (v === 1) pset(x + c, y + r, c1); else if (v === 2) pset(x + c, y + r, c2);
+  }
+}
+
+/* ======================= Icons & pointers (original pixel art) ======================= */
+const ICONS = {
+  floppy: bitmap([
+    "    ######################      ",
+    "    #...#########...##....#     ",
+    "    #...#########...##.....#    ",
+    "    #...#########...##.....#    ",
+    "    #...##############.....#    ",
+    "    #......................#    ",
+    "    #..##################..#    ",
+    "    #..#................#..#    ",
+    "    #..#................#..#    ",
+    "    #..#................#..#    ",
+    "    #..#................#..#    ",
+    "    #..#................#..#    ",
+    "    #..#................#..#    ",
+    "    #..#................#..#    ",
+    "    #..#................#..#    ",
+    "    ########################    "]),
+  trash: bitmap([
+    "             ######             ",
+    "      ####################      ",
+    "      #..................#      ",
+    "      ####################      ",
+    "       #................#       ",
+    "       #..#...#...#...#.#       ",
+    "       #..#...#...#...#.#       ",
+    "       #..#...#...#...#.#       ",
+    "       #..#...#...#...#.#       ",
+    "       #..#...#...#...#.#       ",
+    "       #..#...#...#...#.#       ",
+    "       #..#...#...#...#.#       ",
+    "       #..#...#...#...#.#       ",
+    "       #..#...#...#...#.#       ",
+    "       #................#       ",
+    "        ################        "]),
+  dir: bitmap([
+    "    ########                    ",
+    "    #......#                    ",
+    "    #......#################    ",
+    "    #......................#    ",
+    "    ########################    ",
+    "    #......................#    ",
+    "    #......................#    ",
+    "    #......................#    ",
+    "    #......................#    ",
+    "    #......................#    ",
+    "    #......................#    ",
+    "    #......................#    ",
+    "    #......................#    ",
+    "    #......................#    ",
+    "    #......................#    ",
+    "    ########################    "]),
+  prg: bitmap([
+    "      ####################      ",
+    "      #..#################      ",
+    "      ####################      ",
+    "      #..................#      ",
+    "      #..######..........#      ",
+    "      #..................#      ",
+    "      #..########........#      ",
+    "      #..................#      ",
+    "      #..#####...........#      ",
+    "      #..................#      ",
+    "      #..#######.........#      ",
+    "      #..................#      ",
+    "      #..####............#      ",
+    "      #..................#      ",
+    "      #..................#      ",
+    "      ####################      "]),
+  doc: bitmap([
+    "        ##############          ",
+    "        #............##         ",
+    "        #............#.#        ",
+    "        #............####       ",
+    "        #...............#       ",
+    "        #..##########...#       ",
+    "        #...............#       ",
+    "        #..###########..#       ",
+    "        #...............#       ",
+    "        #..#########....#       ",
+    "        #...............#       ",
+    "        #..##########...#       ",
+    "        #...............#       ",
+    "        #..######.......#       ",
+    "        #...............#       ",
+    "        #################       "]),
+};
+const ARROW = bitmap([
+  "WW       ",
+  "WBW      ",
+  "WBBW     ",
+  "WBBBW    ",
+  "WBBBBW   ",
+  "WBBBBBW  ",
+  "WBBBBBBW ",
+  "WBBBBWWW ",
+  "WBWWBBW  ",
+  "WW  WBBW ",
+  "     WW  "], 9);
+const BEE = bitmap([
+  "    WWW  WWW    ",
+  "   WBBBWWBBBW   ",
+  "   WBWWBBWWBW   ",
+  "    WBBWWBBW    ",
+  "  WWWWWWWWWWWW  ",
+  " WBBWBBWBBWBBBW ",
+  "WBBBWBBWBBWBBBBW",
+  " WBBWBBWBBWBBBW ",
+  "  WWWWWWWWWWWW  ",
+  "   W  W  W  W   "], 16);
+
+function drawIcon(kind, x, y, sel, letter) {
+  const fg = sel ? WHITE : BLACK, bg = sel ? BLACK : WHITE;
+  drawBM(ICONS[kind], x, y, fg, bg);
+  if (letter) text(x + 13, y + 7, letter, fg);
+}
+function drawLabel(lx, ly, lw, s, sel) {
+  fill(lx, ly, lw, 9, sel ? BLACK : WHITE);
+  text(lx + 1, ly + 1, s, sel ? WHITE : BLACK);
+}
+function drawAlertIcon(kind, x, y) {
+  if (kind === "note") {
+    for (let r = 0; r < 16; r++) { const half = r + 1; fill(x + 16 - half, y + r, half * 2, 1, BLACK); }
+    fill(x + 15, y + 5, 2, 6, WHITE); fill(x + 15, y + 12, 2, 2, WHITE);
+  } else if (kind === "question") {
+    for (let r = 0; r < 16; r++) { const half = r < 8 ? (r + 1) * 2 : (16 - r) * 2; fill(x + 16 - half, y + r, half * 2, 1, BLACK); }
+    text(x + 13, y + 4, "?", WHITE);
+  } else if (kind === "stop") {
+    for (let r = 0; r < 16; r++) { const inset = r < 4 ? (4 - r) * 2 : r > 11 ? (r - 11) * 2 : 0; fill(x + inset, y + r, 32 - 2 * inset, 1, BLACK); }
+    fill(x + 6, y + 7, 20, 2, WHITE);
+  }
+}
+
+/* ======================= Disk contents ======================= */
+const README = [
+  "README.TXT",
+  "",
+  "Welcome to the green desktop: a from-scratch tribute to the 1985 GEM",
+  "desktop. Everything is drawn into a 640 x 200 four-colour screen buffer,",
+  "then stretched to 640 x 400 the way a medium-resolution colour monitor",
+  "showed it. No emulator, no ROM images.",
+  "",
+  "Things to try",
+  "",
+  "  * Double-click DEMO.EXE to run the bouncing ball demo.",
+  "  * Drag windows by their title bars; resize them from the corner box.",
+  "  * Open the PICTURES folder. The close box takes you back up a level.",
+  "  * Drag a file onto the Trash. DEMO.EXE is read-only; you can change",
+  "    that in File > Show info, if you really want to delete it.",
+  "  * Try drive B:, Desk > Control panel and View > Show as text.",
+  "  * Options > Save desktop remembers your layout in this browser.",
+  "",
+  "In the demo, M switches the music on or off. Space, Esc or a click",
+  "takes you back to the desktop.",
+  "",
+  "Real ST programs ended in .PRG or .TOS. This one is DEMO.EXE by request."];
+const FS = { A: { items: [
+  { name: "AUTO", ext: "", type: "dir", date: "10-02-87", time: "11:15 am", items: [] },
+  { name: "PICTURES", ext: "", type: "dir", date: "11-08-87", time: "07:30 pm", items: [
+    { name: "BALL", ext: "PI1", type: "doc", size: 32034, date: "11-08-87", time: "07:44 pm" },
+    { name: "SUNSET", ext: "PI1", type: "doc", size: 32034, date: "11-12-87", time: "10:03 pm" },
+    { name: "TITLE", ext: "NEO", type: "doc", size: 32128, date: "11-15-87", time: "08:21 pm" }] },
+  { name: "DEMO", ext: "EXE", type: "prg", size: 21564, date: "11-19-87", time: "09:42 pm", ro: true },
+  { name: "README", ext: "TXT", type: "doc", size: README.join("\r\n").length, date: "11-20-87", time: "12:05 am" },
+  { name: "CONTROL", ext: "ACC", type: "doc", size: 7424, date: "04-22-87", time: "02:00 pm" },
+  { name: "DESKTOP", ext: "INF", type: "doc", size: 512, date: "11-20-87", time: "12:07 am" }] } };
+
+function dirOf(drive, path) {
+  let d = FS[drive]; if (!d) return null;
+  for (const n of path) { const f = d.items.find(i => i.type === "dir" && i.name === n); if (!f) return null; d = f; }
+  return d;
+}
+function stamp(it) {
+  const [mm, dd, yy] = it.date.split("-").map(Number);
+  let [hh, mi] = it.time.slice(0, 5).split(":").map(Number);
+  const pm = it.time.endsWith("pm"); if (hh === 12) hh = 0; if (pm) hh += 12;
+  return ((yy * 100 + mm) * 100 + dd) * 10000 + hh * 100 + mi;
+}
+const fname = it => it.ext ? it.name + "." + it.ext : it.name;
+function countDir(d) {
+  const s = { dirs: 0, files: 0, bytes: 0 };
+  for (const it of d.items) {
+    if (it.type === "dir") { s.dirs++; const c = countDir(it); s.dirs += c.dirs; s.files += c.files; s.bytes += c.bytes; }
+    else { s.files++; s.bytes += it.size; }
+  }
+  return s;
+}
+
+/* ======================= Desktop state ======================= */
+const MENU_H = 10, CELL_W = 100, CELL_H = 30, MIN_W = 128, MIN_H = 64, MAX_WINDOWS = 4;
+let mode = "desk";              // desk | demo | text
+let view = "icons", sortBy = "name";
+let wins = [];
+let sel = { owner: null, set: new Set() };
+let menuOpen = -1, menuHover = -1;
+let dialog = null, drag = null, anim = null;
+let busyUntil = 0;
+let mx = 320, my = 100, pointerIn = false;
+let lastClick = { obj: null, t: 0 };
+const deskIcons = [
+  { kind: "floppy", letter: "A", label: "Floppy disk", x: 40, y: 16 },
+  { kind: "floppy", letter: "B", label: "Floppy disk", x: 40, y: 50 },
+  { kind: "trash", label: "Trash", x: 40, y: 168 }];
+const busy = () => performance.now() < busyUntil;
+function later(ms, fn) { busyUntil = performance.now() + ms; setTimeout(fn, ms); }
+
+function selectOnly(owner, obj) { sel = { owner, set: new Set([obj]) }; }
+function toggleSel(owner, obj) {
+  if (sel.owner !== owner) sel = { owner, set: new Set() };
+  if (sel.set.has(obj)) sel.set.delete(obj); else sel.set.add(obj);
+}
+function clearSel() { sel = { owner: null, set: new Set() }; }
+const isSel = (owner, obj) => sel.owner === owner && sel.set.has(obj);
+const topWin = () => wins[wins.length - 1] || null;
+
+/* ---------- desk icon geometry ---------- */
+function deskRects(di) {
+  const lw = di.label.length * 8 + 2;
+  return [{ x: di.x, y: di.y, w: 32, h: 16 }, { x: di.x + 16 - (lw >> 1), y: di.y + 17, w: lw, h: 9 }];
+}
+const inR = (r, x = mx, y = my) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+function deskIconAt(x, y) {
+  for (let i = deskIcons.length - 1; i >= 0; i--) if (deskRects(deskIcons[i]).some(r => inR(r, x, y))) return deskIcons[i];
+  return null;
+}
+
+/* ---------- windows ---------- */
+const workRect = w => ({ x: w.x + 1, y: w.y + 19, w: w.w - 17, h: w.h - 29 });
+const winTitle = w => " " + w.drive + ":\\" + w.path.map(p => p + "\\").join("") + "*.* ";
+function winInfo(w) {
+  const d = dirOf(w.drive, w.path); if (!d) return "";
+  const n = d.items.length, bytes = d.items.reduce((s, i) => s + (i.size || 0), 0);
+  return bytes + " bytes used in " + n + " item" + (n === 1 ? "" : "s") + ".";
+}
+function sortItems(list) {
+  const a = list.slice(), nm = (p, q) => fname(p).localeCompare(fname(q));
+  a.sort((p, q) => {
+    if ((p.type === "dir") !== (q.type === "dir")) return p.type === "dir" ? -1 : 1;
+    if (sortBy === "date") return stamp(q) - stamp(p) || nm(p, q);
+    if (sortBy === "size") return (q.size || 0) - (p.size || 0) || nm(p, q);
+    if (sortBy === "type") return p.ext.localeCompare(q.ext) || nm(p, q);
+    return nm(p, q);
+  });
+  return a;
+}
+function fmtLine(it) {
+  const size = it.type === "dir" ? "        " : String(it.size).padStart(8);
+  return (it.type === "dir" ? "\x09 " : "  ") + it.name.padEnd(8) + " " + it.ext.padEnd(3) + " " + size + "  " + it.date + "  " + it.time;
+}
+function layout(w) {
+  const wr = workRect(w), d = dirOf(w.drive, w.path), items = d ? sortItems(d.items) : [], out = [];
+  let contentH;
+  if (view === "icons") {
+    const cols = Math.max(1, Math.floor((wr.w - 4) / CELL_W));
+    items.forEach((it, i) => {
+      const c = i % cols, r = (i / cols) | 0, cx = wr.x + 4 + c * CELL_W + (CELL_W >> 1), iy = wr.y + 3 + r * CELL_H - w.scroll;
+      const label = fname(it), lw = label.length * 8 + 2;
+      out.push({ it, ix: cx - 16, iy, lx: cx - (lw >> 1), ly: iy + 17, lw, label,
+        rects: [{ x: cx - 16, y: iy, w: 32, h: 16 }, { x: cx - (lw >> 1), y: iy + 17, w: lw, h: 9 }] });
+    });
+    contentH = Math.ceil(items.length / cols) * CELL_H + 6;
+  } else {
+    items.forEach((it, i) => {
+      const ty = wr.y + 2 + i * 9 - w.scroll, line = fmtLine(it);
+      out.push({ it, ty, line, rects: [{ x: wr.x + 2, y: ty, w: line.length * 8 + 4, h: 9 }] });
+    });
+    contentH = items.length * 9 + 4;
+  }
+  return { items: out, contentH, wr };
+}
+function vGeom(w, L) {
+  const trackY = w.y + 28, trackH = w.h - 47, maxS = Math.max(0, L.contentH - L.wr.h);
+  let sh = maxS ? Math.max(6, Math.round(trackH * L.wr.h / L.contentH)) : trackH;
+  sh = Math.min(sh, trackH);
+  const sy = trackY + (maxS ? Math.round((trackH - sh) * w.scroll / maxS) : 0);
+  return { trackY, trackH, sh, sy, maxS };
+}
+const stepOf = () => view === "icons" ? CELL_H : 9;
+function scrollBy(w, d) { const L = layout(w); w.scroll = clamp(w.scroll + d, 0, Math.max(0, L.contentH - L.wr.h)); }
+function winPart(w, px, py) {
+  const { x, y } = w;
+  if (px < x || px >= x + w.w || py < y || py >= y + w.h) return null;
+  if (py < y + 10) return px < x + 16 ? "close" : px >= x + w.w - 16 ? "full" : "title";
+  if (py < y + 18) return "info";
+  if (px >= x + w.w - 16) return py >= y + w.h - 10 ? "size" : py < y + 28 ? "up" : py >= y + w.h - 19 ? "down" : "vtrack";
+  if (py >= y + w.h - 10) return px < x + 16 ? "left" : px >= x + w.w - 31 ? "right" : "htrack";
+  return "work";
+}
+const winAt = (x, y) => { for (let i = wins.length - 1; i >= 0; i--) if (winPart(wins[i], x, y)) return wins[i]; return null; };
+
+function drawWindow(w, active) {
+  let L = layout(w);
+  const maxS = Math.max(0, L.contentH - L.wr.h);
+  if (w.scroll > maxS || w.scroll < 0) { w.scroll = clamp(w.scroll, 0, maxS); L = layout(w); }
+  const { x, y } = w, W = w.w, H = w.h, wr = L.wr;
+  fill(x, y, W, H, WHITE); rect(x, y, W, H, BLACK);
+  if (active) checker(x + 16, y + 1, W - 32, 8, BLACK, WHITE);
+  hline(x, y + 9, W, BLACK);
+  rect(x, y, 16, 10, BLACK); text(x + 4, y + 1, "\x06", BLACK);
+  rect(x + W - 16, y, 16, 10, BLACK); text(x + W - 12, y + 1, "\x07", BLACK);
+  let t = winTitle(w); const maxc = Math.max(0, ((W - 40) / 8) | 0);
+  if (t.length > maxc) t = t.slice(0, maxc);
+  if (t.length) text(x + ((W - t.length * 8) >> 1), y + 1, t, BLACK, WHITE);
+  clip(x + 1, y + 10, W - 2, 8); text(x + 8, y + 10, winInfo(w), BLACK); noclip();
+  hline(x, y + 18, W, BLACK);
+  // vertical scroller
+  vline(x + W - 16, y + 18, H - 18, BLACK);
+  rect(x + W - 16, y + 18, 16, 10, BLACK); text(x + W - 12, y + 19, "\x01", BLACK);
+  rect(x + W - 16, y + H - 19, 16, 10, BLACK); text(x + W - 12, y + H - 18, "\x02", BLACK);
+  const g = vGeom(w, L);
+  dots(x + W - 15, g.trackY, 14, g.trackH, BLACK, WHITE);
+  fill(x + W - 15, g.sy, 14, g.sh, WHITE); rect(x + W - 16, g.sy, 16, g.sh, BLACK);
+  // horizontal scroller (content always fits across, so the slider fills it)
+  hline(x, y + H - 10, W, BLACK);
+  rect(x, y + H - 10, 16, 10, BLACK); text(x + 4, y + H - 9, "\x03", BLACK);
+  rect(x + W - 31, y + H - 10, 16, 10, BLACK); text(x + W - 27, y + H - 9, "\x04", BLACK);
+  rect(x + 15, y + H - 10, W - 45, 10, BLACK);
+  rect(x + W - 16, y + H - 10, 16, 10, BLACK); text(x + W - 12, y + H - 9, "\x08", BLACK);
+  // contents
+  clip(wr.x, wr.y, wr.w, wr.h);
+  if (view === "icons") {
+    for (const e of L.items) {
+      const s = isSel(w, e.it);
+      drawIcon(e.it.type === "dir" ? "dir" : e.it.type === "prg" ? "prg" : "doc", e.ix, e.iy, s);
+      drawLabel(e.lx, e.ly, e.lw, e.label, s);
+    }
+  } else {
+    for (const e of L.items) {
+      text(wr.x + 4, e.ty + 1, e.line, BLACK);
+      if (isSel(w, e.it)) invert(wr.x + 2, e.ty, e.line.length * 8 + 4, 9);
+    }
+  }
+  noclip();
+}
+
+function openWindow(drive, path, from) {
+  if (wins.length >= MAX_WINDOWS)
+    return alertBox("stop", ["No more windows are available.", "Close one, then try again."], ["OK"]);
+  const n = wins.length;
+  const r = { x: 108 + n * 20, y: 20 + n * 12, w: 408, h: 120 };
+  r.x = clamp(r.x, 0, SW - r.w); r.y = clamp(r.y, MENU_H, SH - r.h);
+  startAnim(from, r, () => wins.push({ drive, path, ...r, scroll: 0, full: false, prev: null }));
+}
+function closeWin(w) {
+  wins = wins.filter(v => v !== w);
+  if (sel.owner === w) clearSel();
+  startAnim({ x: w.x, y: w.y, w: w.w, h: w.h }, deskRects(deskIcons[0])[0], null);
+}
+function closeUp(w) {
+  if (w.path.length) { w.path = w.path.slice(0, -1); w.scroll = 0; if (sel.owner === w) clearSel(); }
+  else closeWin(w);
+}
+function toggleFull(w) {
+  if (w.full && w.prev) { Object.assign(w, w.prev); w.full = false; }
+  else { w.prev = { x: w.x, y: w.y, w: w.w, h: w.h }; Object.assign(w, { x: 0, y: MENU_H, w: SW, h: SH - MENU_H }); w.full = true; }
+}
+function validateWindows() {
+  for (const w of wins) { while (w.path.length && !dirOf(w.drive, w.path)) w.path = w.path.slice(0, -1); w.scroll = 0; }
+}
+
+/* ---------- zoom box animation ---------- */
+function startAnim(from, to, then) {
+  from = from || { x: SW / 2 - 8, y: SH / 2 - 4, w: 16, h: 8 };
+  anim = { from, to, t0: performance.now(), dur: 280, then };
+}
+function drawAnim(now) {
+  const p = Math.min(1, (now - anim.t0) / anim.dur), a = anim.from, b = anim.to;
+  for (const q of [p, p - 0.14, p - 0.28]) {
+    if (q < 0) continue;
+    xorDotRect(a.x + (b.x - a.x) * q, a.y + (b.y - a.y) * q, a.w + (b.w - a.w) * q, a.h + (b.h - a.h) * q);
+  }
+  if (p >= 1) { const f = anim.then; anim = null; if (f) f(); }
+}
+
+/* ======================= Menus ======================= */
+const MENUS = [
+  { title: "Desk", items: [
+    { label: "Desktop info...", act: aboutBox },
+    { sep: true },
+    { label: "Control panel", act: controlPanel }] },
+  { title: "File", items: [
+    { label: "Open", en: () => sel.set.size === 1, act: openSelected },
+    { label: "Show info...", en: () => sel.set.size === 1, act: showInfo },
+    { sep: true },
+    { label: "New folder...", en: () => false },
+    { label: "Close", en: () => !!topWin(), act: () => closeUp(topWin()) },
+    { label: "Close window", en: () => !!topWin(), act: () => closeWin(topWin()) },
+    { sep: true },
+    { label: "Format...", en: () => false }] },
+  { title: "View", items: [
+    { label: "Show as icons", chk: () => view === "icons", act: () => setView("icons") },
+    { label: "Show as text", chk: () => view === "text", act: () => setView("text") },
+    { sep: true },
+    { label: "Sort by name", chk: () => sortBy === "name", act: () => { sortBy = "name"; } },
+    { label: "Sort by date", chk: () => sortBy === "date", act: () => { sortBy = "date"; } },
+    { label: "Sort by size", chk: () => sortBy === "size", act: () => { sortBy = "size"; } },
+    { label: "Sort by type", chk: () => sortBy === "type", act: () => { sortBy = "type"; } }] },
+  { title: "Options", items: [
+    { label: "Install icon...", en: () => false },
+    { label: "Install application...", en: () => false },
+    { label: "Set preferences...", en: () => false },
+    { sep: true },
+    { label: "Save desktop", act: askSave },
+    { label: "Print screen", act: printFail }] }];
+{ let x = 8; for (const m of MENUS) { m.x = x; m.w = (m.title.length + 2) * 8; x += m.w; } }
+const isEn = it => !it.sep && (it.en ? it.en() : !!it.act);
+function setView(v) { view = v; wins.forEach(w => { w.scroll = 0; }); }
+function titleAt(x) { return MENUS.findIndex(m => x >= m.x && x < m.x + m.w); }
+function ddRect(m) {
+  const maxL = Math.max(...m.items.filter(i => !i.sep).map(i => i.label.length));
+  const dw = (maxL + 4) * 8; let dx = m.x; if (dx + dw + 2 > SW) dx = SW - dw - 2;
+  return { x: dx, y: MENU_H - 1, w: dw, h: m.items.length * 9 + 2 };
+}
+function menuItemAt(x, y) {
+  if (menuOpen < 0) return -1;
+  const m = MENUS[menuOpen], r = ddRect(m);
+  if (x < r.x || x >= r.x + r.w || y < r.y + 1 || y >= r.y + r.h - 1) return -1;
+  return Math.min(m.items.length - 1, ((y - r.y - 1) / 9) | 0);
+}
+function drawMenuBar() {
+  fill(0, 0, SW, MENU_H - 1, WHITE); hline(0, MENU_H - 1, SW, BLACK);
+  MENUS.forEach((m, i) => { text(m.x + 8, 1, m.title, BLACK); if (i === menuOpen) invert(m.x, 0, m.w, MENU_H - 1); });
+}
+function drawDropdown() {
+  const m = MENUS[menuOpen], r = ddRect(m);
+  fill(r.x, r.y, r.w, r.h, WHITE); rect(r.x, r.y, r.w, r.h, BLACK);
+  fill(r.x + r.w, r.y + 1, 2, r.h, BLACK); fill(r.x + 2, r.y + r.h, r.w, 1, BLACK);
+  m.items.forEach((it, i) => {
+    const iy = r.y + 1 + i * 9;
+    if (it.sep) { for (let x = r.x + 2; x < r.x + r.w - 2; x += 2) pset(x, iy + 4, BLACK); return; }
+    if (it.chk && it.chk()) text(r.x + 4, iy + 1, "\x05", BLACK);
+    text(r.x + 16, iy + 1, it.label, BLACK);
+    if (!isEn(it)) dim(r.x + 1, iy, r.w - 2, 9);
+    else if (i === menuHover) invert(r.x + 1, iy, r.w - 2, 9);
+  });
+}
+
+/* ======================= Dialogs & alerts ======================= */
+function frameBox(x, y, w, h) {
+  fill(x - 3, y - 2, w + 6, h + 4, WHITE); rect(x - 3, y - 2, w + 6, h + 4, BLACK); rect(x, y, w, h, BLACK);
+}
+function drawButton(b, pressed) {
+  fill(b.x, b.y, b.w, b.h, WHITE); rect(b.x, b.y, b.w, b.h, BLACK);
+  if (b.def) { rect(b.x - 1, b.y - 1, b.w + 2, b.h + 2, BLACK); vline(b.x - 2, b.y - 1, b.h + 2, BLACK); vline(b.x + b.w + 1, b.y - 1, b.h + 2, BLACK); }
+  text(b.x + ((b.w - b.label.length * 8) >> 1), b.y + ((b.h - 8) >> 1), b.label, BLACK);
+  if (pressed || (b.sel && b.sel())) invert(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
+}
+function drawDialog() {
+  const d = dialog; frameBox(d.x, d.y, d.w, d.h);
+  if (d.draw) d.draw();
+  d.buttons.forEach(b => drawButton(b, d.pressed === b && inR(b)));
+}
+function centreBox(w, h) { return { x: (SW - w) >> 1, y: MENU_H + ((SH - MENU_H - h) >> 1) }; }
+function alertBox(icon, lines, labels, def = 0, cb = null, centre = false) {
+  const tw = Math.max(...lines.map(s => s.length)) * 8, iw = icon ? 48 : 0;
+  const bws = labels.map(l => Math.max(64, l.length * 8 + 16));
+  const brow = bws.reduce((a, b) => a + b, 0) + (labels.length - 1) * 14;
+  const w = Math.max(24 + iw + tw + 24, brow + 40);
+  const th = Math.max(lines.length * 9, icon ? 18 : 0), h = 10 + th + 32;
+  const { x, y } = centreBox(w, h);
+  let bx = centre ? x + ((w - brow) >> 1) : x + w - 20 - brow;
+  const buttons = labels.map((l, i) => {
+    const b = { x: bx, y: y + h - 20, w: bws[i], h: 12, label: l, def: i === def, act: () => { dialog = null; if (cb) cb(i); } };
+    bx += bws[i] + 14; return b;
+  });
+  const ci = labels.findIndex(l => /cancel/i.test(l));
+  dialog = { x, y, w, h, buttons, def, cancel: ci >= 0 ? ci : labels.length - 1,
+    draw() {
+      if (icon) drawAlertIcon(icon, x + 18, y + 10);
+      lines.forEach((s, i) => text(centre ? x + ((w - s.length * 8) >> 1) : x + 24 + iw, y + 10 + i * 9, s, BLACK));
+    } };
+}
+function aboutBox() {
+  alertBox(null, ["GREEN DESKTOP", "", "A tribute to the 1985 GEM desktop,", "hand-drawn in a 640 x 200 screen",
+    "with four colours, no emulator", "and no ROM images.", "", "Plain JavaScript, 2026."], ["OK"], 0, null, true);
+}
+function printFail() {
+  alertBox("stop", ["The printer isn't responding.", "Check that it's connected", "and switched on."], ["Cancel", "Retry"], 0,
+    i => { if (i === 1) later(700, printFail); });
+}
+function insertDiskB() {
+  alertBox("note", ["Please insert disk B: into", "drive A:."], ["OK", "Cancel"], 0, i => { if (i === 0) later(800, diskBFail); });
+}
+function diskBFail() {
+  alertBox("stop", ["Disk B: can't be read. It may", "be unformatted or damaged."], ["Cancel", "Retry"], 1,
+    i => { if (i === 1) later(800, diskBFail); });
+}
+function askSave() {
+  alertBox("question", ["Save the current desktop", "layout and colours?"], ["OK", "Cancel"], 0, i => {
+    if (i !== 0) return;
+    later(500, () => { if (!saveDesktop()) alertBox("note", ["The desktop couldn't be saved", "in this browser."], ["OK"]); });
+  });
+}
+function infoDialog(title, lines, item) {
+  const lh = lines.length * 9, w = 344, h = 24 + lh + (item ? 20 : 0) + 30;
+  const { x, y } = centreBox(w, h), ay = y + 24 + lh + 4;
+  let ro = item ? !!item.ro : false;
+  const buttons = [];
+  if (item) buttons.push(
+    { x: x + 136, y: ay, w: 96, h: 12, label: "Read/Write", sel: () => !ro, act: () => { ro = false; } },
+    { x: x + 240, y: ay, w: 88, h: 12, label: "Read-only", sel: () => ro, act: () => { ro = true; } });
+  buttons.push(
+    { x: x + w - 20 - 142, y: y + h - 20, w: 64, h: 12, label: "OK", def: true, act: () => { if (item) item.ro = ro; dialog = null; } },
+    { x: x + w - 20 - 64, y: y + h - 20, w: 64, h: 12, label: "Cancel", act: () => { dialog = null; } });
+  dialog = { x, y, w, h, buttons, def: buttons.length - 2, cancel: buttons.length - 1,
+    draw() {
+      text(x + ((w - title.length * 8) >> 1), y + 7, title, BLACK);
+      for (let xx = x + 16; xx < x + w - 16; xx += 2) pset(xx, y + 18, BLACK);
+      lines.forEach((s, i) => text(x + 24, y + 24 + i * 9, s, BLACK));
+      if (item) text(x + 24, ay + 2, "Attributes:", BLACK);
+    } };
+}
+function showInfo() {
+  const obj = [...sel.set][0], owner = sel.owner; if (!obj) return;
+  if (owner === "desk") {
+    if (obj.kind === "trash") return alertBox("note", ["The Trash has no information", "to show."], ["OK"]);
+    if (obj.letter === "B") return insertDiskB();
+    const s = countDir(FS.A);
+    return infoDialog("Disk information", ["Drive identifier:  A:", "Disk label:        DEMODISK",
+      "Number of folders: " + s.dirs, "Number of items:   " + s.files, "Bytes used:        " + s.bytes,
+      "Bytes available:   " + (726016 - s.bytes)], null);
+  }
+  if (obj.type === "dir") {
+    const s = countDir(obj);
+    return infoDialog("Folder information", ["Name:              " + obj.name, "Created:           " + obj.date + "  " + obj.time,
+      "Number of folders: " + s.dirs, "Number of items:   " + s.files, "Size in bytes:     " + s.bytes], null);
+  }
+  infoDialog("Item information", ["Name:           " + obj.name.padEnd(8) + "." + obj.ext, "Size in bytes:  " + obj.size,
+    "Last modified:  " + obj.date + "  " + obj.time], obj);
+}
+function controlPanel() {
+  const saved = palRGB[2].slice(), w = 300, h = 100, { x, y } = centreBox(w, h);
+  const adj = (i, d) => { palRGB[2][i] = clamp(palRGB[2][i] + d, 0, 7); updatePal(); };
+  const buttons = [];
+  for (let i = 0; i < 3; i++) {
+    const ry = y + 26 + i * 14;
+    buttons.push({ x: x + 112, y: ry, w: 20, h: 11, label: "\x03", repeat: true, act: () => adj(i, -1) },
+                 { x: x + 168, y: ry, w: 20, h: 11, label: "\x04", repeat: true, act: () => adj(i, 1) });
+  }
+  buttons.push(
+    { x: x + 20, y: y + h - 20, w: 64, h: 12, label: "Reset", act: () => { palRGB[2] = DEFAULT_DESK.slice(); updatePal(); } },
+    { x: x + w - 20 - 142, y: y + h - 20, w: 64, h: 12, label: "OK", def: true, act: () => { dialog = null; } },
+    { x: x + w - 20 - 64, y: y + h - 20, w: 64, h: 12, label: "Cancel", act: () => { palRGB[2] = saved; updatePal(); dialog = null; } });
+  dialog = { x, y, w, h, buttons, def: buttons.length - 2, cancel: buttons.length - 1,
+    draw() {
+      text(x + ((w - 13 * 8) >> 1), y + 7, "Control panel", BLACK);
+      for (let xx = x + 16; xx < x + w - 16; xx += 2) pset(xx, y + 18, BLACK);
+      ["Red", "Green", "Blue"].forEach((n, i) => {
+        const ry = y + 26 + i * 14;
+        text(x + 24, ry + 2, n, BLACK); text(x + 146, ry + 2, String(palRGB[2][i]), BLACK);
+      });
+      text(x + 212, y + 26 - 9 + 1, "Desk", BLACK);
+      fill(x + 212, y + 27, 64, 38, GREEN); rect(x + 212, y + 27, 64, 38, BLACK);
+    } };
+}
+
+/* ======================= Opening things ======================= */
+function openObj(owner, obj, from) {
+  if (owner === "desk") {
+    if (obj.kind === "trash") return alertBox("note", ["The Trash can't be opened. Drag", "files onto it to delete them."], ["OK"]);
+    if (obj.letter === "B") return insertDiskB();
+    return openWindow("A", [], from);
+  }
+  if (obj.type === "dir") { owner.path = [...owner.path, obj.name]; owner.scroll = 0; clearSel(); return; }
+  if (obj.type === "prg") return launch(from);
+  if (obj.ext === "TXT") return alertBox("question", ["Show this file on screen,", "or print it?"], ["Show", "Print", "Cancel"], 0,
+    i => { if (i === 0) mode = "text"; else if (i === 1) later(600, printFail); });
+  if (obj.ext === "ACC") return alertBox("note", ["Desk accessories load when the", "computer starts. This one is", "in the Desk menu."], ["OK"]);
+  return alertBox("note", ["No application is installed", "for this kind of document."], ["OK"]);
+}
+function selEntries() {
+  if (!sel.owner) return [];
+  if (sel.owner === "desk") return deskIcons.filter(d => sel.set.has(d)).map(d => ({ obj: d, rects: deskRects(d) }));
+  return layout(sel.owner).items.filter(e => sel.set.has(e.it)).map(e => ({ obj: e.it, rects: e.rects }));
+}
+function openSelected() {
+  const e = selEntries()[0]; if (e) openObj(sel.owner, e.obj, e.rects[0]);
+}
+function launch(from) {
+  Sound.ensure();
+  startAnim(from, { x: 0, y: 0, w: SW, h: SH }, null);
+  later(950, () => Demo.start());
+}
+function trashDrop(owner, objs) {
+  if (owner === "desk") {
+    if (objs.some(o => o.kind !== "trash"))
+      alertBox("stop", ["Drives can't go in the Trash.", "Drag files onto it instead."], ["OK"]);
+    return;
+  }
+  const ro = objs.find(o => o.ro);
+  if (ro) return alertBox("note", [fname(ro) + " is read-only, so it", "can't be deleted. Change that", "with File > Show info."], ["OK"]);
+  const first = objs.length === 1 ? "Delete " + fname(objs[0]) + "?" : "Delete these " + objs.length + " items?";
+  alertBox("question", [first, "Deleted items can't be", "recovered."], ["OK", "Cancel"], 1, i => {
+    if (i !== 0) return;
+    later(450, () => {
+      const d = dirOf(owner.drive, owner.path);
+      if (d) d.items = d.items.filter(it => !objs.includes(it));
+      clearSel(); validateWindows();
+    });
+  });
+}
+
+/* ======================= Save / load ======================= */
+const SAVE_KEY = "green-desktop-v1";
+function saveDesktop() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      icons: deskIcons.map(d => [d.x, d.y]), view, sortBy, desk: palRGB[2],
+      wins: wins.map(w => ({ drive: w.drive, path: w.path, x: w.x, y: w.y, w: w.w, h: w.h })) }));
+    return true;
+  } catch (e) { return false; }
+}
+function loadDesktop() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SAVE_KEY) || "null"); if (!s) return;
+    if (Array.isArray(s.icons)) s.icons.forEach((p, i) => { if (deskIcons[i] && Array.isArray(p)) { deskIcons[i].x = clamp(+p[0] || 0, 0, SW - 32); deskIcons[i].y = clamp(+p[1] || 0, MENU_H + 1, SH - 26); } });
+    if (s.view === "icons" || s.view === "text") view = s.view;
+    if (["name", "date", "size", "type"].includes(s.sortBy)) sortBy = s.sortBy;
+    if (Array.isArray(s.desk) && s.desk.length === 3) palRGB[2] = s.desk.map(v => clamp(v | 0, 0, 7));
+    if (Array.isArray(s.wins)) s.wins.slice(0, MAX_WINDOWS).forEach(w => {
+      if (w && w.drive === "A" && Array.isArray(w.path) && dirOf("A", w.path))
+        wins.push({ drive: "A", path: w.path.slice(), x: clamp(w.x | 0, -300, SW - 40), y: clamp(w.y | 0, MENU_H, SH - 12),
+          w: clamp(w.w | 0, MIN_W, SW), h: clamp(w.h | 0, MIN_H, SH - MENU_H), scroll: 0, full: false, prev: null });
+    });
+  } catch (e) { /* storage unavailable: start fresh */ }
+}
+
+/* ======================= Pointer logic ======================= */
+function onDown(shift) {
+  if (busy() || anim) return;
+  if (dialog) {
+    const b = dialog.buttons.find(b => inR(b));
+    if (b) { dialog.pressed = b; if (b.repeat) { b.act(); drag = { kind: "repeat", fn: b.act, btn: b, next: performance.now() + 380 }; } }
+    return;
+  }
+  if (menuOpen >= 0) {
+    if (menuItemAt(mx, my) >= 0) return;
+    if (my < MENU_H && titleAt(mx) >= 0) { menuOpen = titleAt(mx); menuHover = -1; return; }
+    menuOpen = -1; menuHover = -1; return;
+  }
+  if (my < MENU_H) { const t = titleAt(mx); if (t >= 0) { menuOpen = t; menuHover = -1; } return; }
+  for (let i = wins.length - 1; i >= 0; i--) {
+    const w = wins[i], part = winPart(w, mx, my); if (!part) continue;
+    if (i !== wins.length - 1) { wins.splice(i, 1); wins.push(w); }
+    winDown(w, part, shift); return;
+  }
+  const di = deskIconAt(mx, my);
+  if (di) { itemDown("desk", di, deskRects(di)[0], shift); return; }
+  clearSel();
+}
+function winDown(w, part, shift) {
+  const now = performance.now();
+  if (part === "close") closeUp(w);
+  else if (part === "full") toggleFull(w);
+  else if (part === "title") drag = { kind: "move", w, ox: mx - w.x, oy: my - w.y, nx: w.x, ny: w.y };
+  else if (part === "size") drag = { kind: "size", w, nw: w.w, nh: w.h };
+  else if (part === "up" || part === "down") {
+    const st = (part === "up" ? -1 : 1) * stepOf(), fn = () => scrollBy(w, st);
+    fn(); drag = { kind: "repeat", fn, next: now + 380 };
+  } else if (part === "vtrack") {
+    const g = vGeom(w, layout(w));
+    if (my >= g.sy && my < g.sy + g.sh) drag = { kind: "vslide", w, grab: my - g.sy };
+    else {
+      const up = my < g.sy, pg = Math.max(stepOf(), workRect(w).h - stepOf());
+      const fn = () => { const g2 = vGeom(w, layout(w)); if (up ? my < g2.sy : my >= g2.sy + g2.sh) scrollBy(w, up ? -pg : pg); };
+      fn(); drag = { kind: "repeat", fn, next: now + 380 };
+    }
+  } else if (part === "work") {
+    const e = layout(w).items.find(e => e.rects.some(r => inR(r)));
+    if (e) itemDown(w, e.it, e.rects[0], shift); else if (!shift) clearSel();
+  }
+}
+function itemDown(owner, obj, rectFrom, shift) {
+  const now = performance.now();
+  const dbl = lastClick.obj === obj && now - lastClick.t < 430;
+  lastClick = { obj: dbl ? null : obj, t: now };
+  if (dbl) { selectOnly(owner, obj); openObj(owner, obj, rectFrom); return; }
+  if (shift) { toggleSel(owner, obj); return; }
+  if (!isSel(owner, obj)) selectOnly(owner, obj);
+  drag = { kind: "press", owner, sx: mx, sy: my };
+}
+function onMove() {
+  if (dialog || busy()) return;
+  if (drag) { dragMove(); return; }
+  if (my < MENU_H) { const t = titleAt(mx); if (t >= 0 && menuOpen !== t) { menuOpen = t; menuHover = -1; } }
+  if (menuOpen >= 0) menuHover = menuItemAt(mx, my);
+}
+function dragMove() {
+  const d = drag;
+  if (d.kind === "move") { d.nx = clamp(mx - d.ox, -d.w.w + 40, SW - 40); d.ny = clamp(my - d.oy, MENU_H, SH - 12); }
+  else if (d.kind === "size") { d.nw = clamp(mx - d.w.x + 8, MIN_W, SW - d.w.x); d.nh = clamp(my - d.w.y + 5, MIN_H, SH - d.w.y); }
+  else if (d.kind === "vslide") {
+    const L = layout(d.w), g = vGeom(d.w, L);
+    if (g.maxS > 0 && g.trackH > g.sh) d.w.scroll = clamp(Math.round((my - d.grab - g.trackY) / (g.trackH - g.sh) * g.maxS), 0, g.maxS);
+  } else if (d.kind === "press" && Math.abs(mx - d.sx) + Math.abs(my - d.sy) > 3) {
+    const ents = selEntries();
+    if (ents.length) drag = { kind: "icons", owner: d.owner, sx: d.sx, sy: d.sy, objs: ents.map(e => e.obj), rects: ents.flatMap(e => e.rects) };
+  }
+}
+function onUp() {
+  if (dialog) {
+    const b = dialog.pressed; dialog.pressed = null;
+    if (drag && drag.kind === "repeat") { drag = null; return; }
+    if (b && inR(b)) b.act();
+    return;
+  }
+  if (menuOpen >= 0) {
+    const i = menuItemAt(mx, my);
+    if (i >= 0) { const it = MENUS[menuOpen].items[i]; if (isEn(it)) { menuOpen = -1; menuHover = -1; it.act(); } }
+    return;
+  }
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (d.kind === "move") { d.w.x = d.nx; d.w.y = d.ny; d.w.full = false; }
+  else if (d.kind === "size") { d.w.w = d.nw; d.w.h = d.nh; d.w.full = false; }
+  else if (d.kind === "icons") {
+    const dx = mx - d.sx, dy = my - d.sy, overWin = winAt(mx, my), target = overWin ? null : deskIconAt(mx, my);
+    if (target && target.kind === "trash" && !d.objs.includes(target)) trashDrop(d.owner, d.objs);
+    else if (d.owner === "desk" && !overWin)
+      d.objs.forEach(o => { o.x = clamp(o.x + dx, 0, SW - 32); o.y = clamp(o.y + dy, MENU_H + 1, SH - 26); });
+  }
+}
+
+/* ======================= Keyboard ======================= */
+function keyNav(delta) {
+  const owner = topWin() || "desk";
+  const list = owner === "desk" ? deskIcons : layout(owner).items.map(e => e.it);
+  if (!list.length) return;
+  const cur = sel.owner === owner ? list.findIndex(o => sel.set.has(o)) : -1;
+  selectOnly(owner, list[(cur + delta + list.length) % list.length]);
+}
+window.addEventListener("keydown", e => {
+  if (e.target && e.target.tagName === "BUTTON") return;
+  const k = e.key;
+  if (mode === "demo") {
+    if (k === " " || k === "Escape" || k === "Enter") { e.preventDefault(); Demo.stop(); }
+    else if (k === "m" || k === "M") setSound(!Sound.on);
+    return;
+  }
+  if (mode === "text") { e.preventDefault(); mode = "desk"; return; }
+  if (busy() || anim) return;
+  if (dialog) {
+    if (k === "Enter") { e.preventDefault(); dialog.buttons[dialog.def].act(); }
+    else if (k === "Escape") { e.preventDefault(); dialog.buttons[dialog.cancel].act(); }
+    return;
+  }
+  if (menuOpen >= 0 && k === "Escape") { menuOpen = -1; return; }
+  if (k === "ArrowRight" || k === "ArrowDown") { e.preventDefault(); keyNav(1); }
+  else if (k === "ArrowLeft" || k === "ArrowUp") { e.preventDefault(); keyNav(-1); }
+  else if (k === "Enter") { e.preventDefault(); if (sel.set.size === 1) openSelected(); }
+  else if (k === "Escape" || k === "Backspace") { if (topWin()) { e.preventDefault(); closeUp(topWin()); } }
+  else if (k === "Delete" && sel.set.size) trashDrop(sel.owner, [...sel.set]);
+});
+
+/* ======================= Desktop render ======================= */
+function renderDesk(now) {
+  noclip();
+  fill(0, 0, SW, SH, GREEN);
+  for (const di of deskIcons) {
+    const s = isSel("desk", di), r = deskRects(di);
+    drawIcon(di.kind, di.x, di.y, s, di.letter);
+    drawLabel(r[1].x, r[1].y, r[1].w, di.label, s);
+  }
+  wins.forEach((w, i) => drawWindow(w, i === wins.length - 1));
+  drawMenuBar();
+  if (menuOpen >= 0) drawDropdown();
+  if (dialog) drawDialog();
+  if (drag) {
+    if (drag.kind === "move") xorDotRect(drag.nx, drag.ny, drag.w.w, drag.w.h);
+    else if (drag.kind === "size") xorDotRect(drag.w.x, drag.w.y, drag.nw, drag.nh);
+    else if (drag.kind === "icons") { const dx = mx - drag.sx, dy = my - drag.sy; for (const r of drag.rects) xorDotRect(r.x + dx, r.y + dy, r.w, r.h); }
+  }
+  if (anim) drawAnim(now);
+  if (pointerIn) { if (busy()) drawBM(BEE, mx - 8, my - 5, BLACK, WHITE); else drawBM(ARROW, mx, my, BLACK, WHITE); }
+}
+function renderText() {
+  noclip(); fill(0, 0, SW, SH, WHITE);
+  README.slice(0, 23).forEach((l, i) => text(0, i * 8, l.slice(0, 80), BLACK));
+  text(0, 192, " -- Press any key or click to return to the desktop -- ".padEnd(80), WHITE, BLACK);
+}
+
+/* ======================= Sound (square-wave chip tune) ======================= */
+const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+const ROW = 0.12;
+const BASS = [45, 41, 48, 43];
+const CHORDS = [[57, 60, 64], [57, 60, 65], [55, 60, 64], [55, 59, 62]];
+const LEAD = { 0: 69, 3: 72, 6: 76, 8: 74, 10: 72, 12: 71, 14: 69, 16: 72, 19: 69, 22: 65, 24: 67, 26: 69, 28: 72,
+  32: 76, 35: 79, 38: 76, 40: 74, 42: 72, 44: 74, 46: 76, 48: 74, 51: 71, 54: 67, 56: 69, 58: 71, 60: 74 };
+const LEAD_KEYS = Object.keys(LEAD).map(Number).sort((a, b) => a - b);
+const LEAD_LEN = {};
+LEAD_KEYS.forEach((k, i) => { LEAD_LEN[k] = (i + 1 < LEAD_KEYS.length ? LEAD_KEYS[i + 1] : LEAD_KEYS[0] + 64) - k; });
+
+const Sound = {
+  on: true, ctx: null, master: null, noiseBuf: null, timer: 0, playing: false, row: 0, loops: 0, next: 0,
+  ensure() {
+    if (!this.on) return;
+    try {
+      if (!this.ctx) {
+        const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+        const c = this.ctx = new AC();
+        this.master = c.createGain(); this.master.gain.value = 0;
+        const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 6500;
+        this.master.connect(lp); lp.connect(c.destination);
+        const len = (c.sampleRate * 0.5) | 0;
+        this.noiseBuf = c.createBuffer(1, len, c.sampleRate);
+        const d = this.noiseBuf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      }
+      if (this.ctx.state === "suspended") this.ctx.resume();
+    } catch (e) { this.ctx = null; }
+  },
+  startMusic() {
+    if (!this.on || !this.ctx) return;
+    this.stopMusic();
+    const t = this.ctx.currentTime;
+    this.master.gain.cancelScheduledValues(t); this.master.gain.setValueAtTime(0.09, t);
+    this.playing = true; this.row = 0; this.loops = 0; this.next = t + 0.08;
+    this.pump(); this.timer = setInterval(() => this.pump(), 30);
+  },
+  stopMusic() {
+    this.playing = false; clearInterval(this.timer); this.timer = 0;
+    if (this.ctx) { const t = this.ctx.currentTime; this.master.gain.cancelScheduledValues(t); this.master.gain.setValueAtTime(this.master.gain.value, t); this.master.gain.linearRampToValueAtTime(0, t + 0.06); }
+  },
+  pump() {
+    if (!this.playing) return;
+    const now = this.ctx.currentTime; if (this.next < now) this.next = now + 0.02;
+    while (this.next < now + 0.15) {
+      this.playRow(this.row, this.next); this.next += ROW;
+      this.row = (this.row + 1) & 63; if (this.row === 0) this.loops++;
+    }
+  },
+  voice(type, f, t, dur, vol) {
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.004);
+    g.gain.linearRampToValueAtTime(vol * 0.6, t + dur * 0.5); g.gain.linearRampToValueAtTime(0, t + dur);
+    o.connect(g); g.connect(this.master); o.start(t); o.stop(t + dur + 0.02);
+    return o;
+  },
+  noise(t, dur, vol, type, freq) {
+    const c = this.ctx, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+    s.buffer = this.noiseBuf; f.type = type; f.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    s.connect(f); f.connect(g); g.connect(this.master); s.start(t, Math.random() * 0.3); s.stop(t + dur + 0.02);
+  },
+  playRow(row, t) {
+    const bar = row >> 4, step = row & 15;
+    if ((step & 1) === 0) this.voice("square", mtof(BASS[bar] + ((step & 3) === 2 ? 12 : 0)), t, ROW * 1.7, 0.36);
+    const ch = CHORDS[bar], o = this.voice("square", mtof(ch[0]), t, ROW, 0.13);
+    for (let k = 1; k < 6; k++) o.frequency.setValueAtTime(mtof(ch[k % 3]), t + k * ROW / 6);
+    if (this.loops > 0 && LEAD[row] !== undefined) this.voice("square", mtof(LEAD[row]), t, LEAD_LEN[row] * ROW * 0.88, 0.22);
+    if (step === 0 || step === 8 || step === 10) { const k = this.voice("square", 150, t, 0.1, 0.6); k.frequency.exponentialRampToValueAtTime(40, t + 0.09); }
+    if (step === 4 || step === 12) this.noise(t, 0.12, 0.45, "bandpass", 1800);
+    if (step & 1) this.noise(t, 0.03, 0.12, "highpass", 7000);
+  },
+  thud() {
+    if (!this.playing) return;
+    const t = this.ctx.currentTime, o = this.voice("sine", 120, t, 0.16, 1.2);
+    o.frequency.exponentialRampToValueAtTime(42, t + 0.15); this.noise(t, 0.06, 0.4, "lowpass", 900);
+  },
+  tock() { if (this.playing) this.voice("square", 880, this.ctx.currentTime, 0.03, 0.12); },
+};
+const sndBtn = document.getElementById("sndBtn");
+function setSound(on) {
+  Sound.on = on;
+  sndBtn.textContent = on ? "Sound on" : "Sound off"; sndBtn.setAttribute("aria-pressed", String(on));
+  if (!on) Sound.stopMusic();
+  else if (mode === "demo") { Sound.ensure(); Sound.startMusic(); }
+}
+sndBtn.addEventListener("click", () => setSound(!Sound.on));
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) Sound.stopMusic();
+  else if (mode === "demo" && Sound.on) { Sound.ensure(); Sound.startMusic(); }
+});
+
+/* ======================= DEMO.EXE ======================= */
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16);
+const BARPAL = [[7, 3, 0], [6, 0, 6], [0, 5, 7]];
+const SEG = [[7, 1, 1], [7, 7, 7], [1, 3, 7], [7, 7, 7], [7, 6, 0], [7, 7, 7]];
+const CAP = [7, 7, 7];
+const LIGHT = (() => { const v = [-0.5, -0.65, 0.58], l = Math.hypot(...v); return v.map(a => a / l); })();
+const RAINBOW = Array.from({ length: 32 }, (_, i) => {
+  const h = i / 32 * 6, k = n => { const m = (n + h) % 6; return 7 * (1 - Math.max(0, Math.min(m, 4 - m, 1))); };
+  return c9(Math.round(k(5)), Math.round(k(3)), Math.round(k(1)));
+});
+const LOGO = Array.from({ length: 32 }, (_, r) => { const t = r / 31; return [7, Math.round(7 - 4.5 * t), Math.round(5 * (1 - t) * (1 - t))]; });
+const SCROLL = "          HELLO FROM THE GREEN DESKTOP!     THIS SCREEN IS 320 X 200 WITH NINE-BIT COLOUR: RASTER BARS, " +
+  "A PARALLAX STARFIELD, A DITHERED BEACH BALL AND A THREE-VOICE SQUARE-WAVE TUNE, ALL IN PLAIN JAVASCRIPT.     " +
+  "PRESS M TO SWITCH THE MUSIC ON OR OFF.  SPACE, ESC OR A CLICK TAKES YOU BACK TO THE DESKTOP.     " +
+  "GREETINGS TO EVERYONE WHO EVER TYPED IN A LISTING FROM A MAGAZINE AND GOT IT WORKING FIRST TIME ... " +
+  "AND TO EVERYONE WHO DIDN'T.     WRAP!          ";
+
+const Demo = {
+  R: 24, FLOOR: 168, G: 0.25, V0: 6.3,
+  rows: new Uint32Array(200), isBar: new Uint8Array(200),
+  start() {
+    setRes(320, 200); mode = "demo"; drag = null; menuOpen = -1;
+    this.tick = 0; this.acc = 0; this.last = performance.now(); this.scroll = 0;
+    this.ball = { x: 80, y: 70, vx: 1.35, vy: 0, rot: 0 };
+    this.stars = Array.from({ length: 80 }, () => ({ x: Math.random() * 320, y: (Math.random() * 144) | 0, s: [0.4, 0.9, 1.8][(Math.random() * 3) | 0] }));
+    if (Sound.on) { Sound.ensure(); Sound.startMusic(); }
+  },
+  stop() { Sound.stopMusic(); setRes(640, 200); mode = "desk"; lastClick.obj = null; },
+  update(now) {
+    this.acc += Math.min(now - this.last, 100); this.last = now;
+    while (this.acc >= 20) { this.acc -= 20; this.step(); }
+  },
+  step() {
+    const b = this.ball, R = this.R;
+    this.tick++;
+    b.vy += this.G; b.y += b.vy;
+    if (b.y + R >= this.FLOOR) { b.y = this.FLOOR - R; b.vy = -this.V0; Sound.thud(); }
+    b.x += b.vx;
+    if (b.x < R + 4) { b.x = R + 4; b.vx = Math.abs(b.vx); Sound.tock(); }
+    else if (b.x > 316 - R) { b.x = 316 - R; b.vx = -Math.abs(b.vx); Sound.tock(); }
+    b.rot -= b.vx / R;
+    for (const s of this.stars) { s.x -= s.s; if (s.x < 0) s.x += 320; }
+    this.scroll += 2;
+  },
+  render() {
+    const t = this.tick, P = img32, rows = this.rows, isBar = this.isBar;
+    // sky and raster bars
+    for (let y = 0; y < 146; y++) { rows[y] = c9(0, 0, 1 + ((y * 3 / 146) | 0)); isBar[y] = 0; }
+    const bars = [0, 1, 2].map(i => { const ph = t * 0.045 + i * 2.094; return { c: Math.round(70 + 58 * Math.sin(ph)), z: Math.cos(ph), p: BARPAL[i] }; })
+      .sort((a, b) => a.z - b.z);
+    for (const bar of bars) {
+      const depth = 0.55 + 0.45 * (bar.z + 1) / 2;
+      for (let k = -7; k <= 7; k++) {
+        const y = bar.c + k; if (y < 0 || y >= 146) continue;
+        const tone = (1 - Math.abs(k) / 8) * depth;
+        rows[y] = c9(Math.round(bar.p[0] * tone), Math.round(bar.p[1] * tone), Math.round(bar.p[2] * tone)); isBar[y] = 1;
+      }
+    }
+    for (let y = 0; y < 146; y++) P.fill(rows[y], y * 320, y * 320 + 320);
+    for (const s of this.stars) if (!isBar[s.y]) P[s.y * 320 + (s.x | 0)] = s.s > 1.5 ? c9(7, 7, 7) : s.s > 0.8 ? c9(4, 4, 6) : c9(2, 2, 4);
+    this.logo(t);
+    // checkerboard floor rolling towards the viewer
+    const sz = t * 0.12;
+    for (let y = 146; y < 177; y++) {
+      const i = y - 145, d = 600 / (i + 6), v = Math.floor((d + sz) / 8), shade = Math.pow(i / 31, 0.9);
+      const A = c9(Math.round(1 * shade), Math.round(5 * shade), Math.round(6 * shade)), B = c9(0, Math.round(1 * shade), Math.round(2.4 * shade));
+      const k = d / 160 / 8, row = y * 320;
+      for (let x = 0; x < 320; x++) P[row + x] = ((Math.floor((x - 160) * k) + v) & 1) ? A : B;
+    }
+    P.fill(c9(3, 3, 4), 177 * 320, 178 * 320);
+    P.fill(ST9[0], 178 * 320, 200 * 320);
+    // dithered shadow
+    const b = this.ball, R = this.R, hgt = this.FLOOR - (b.y + R), f = 1 - Math.min(1, hgt / 100);
+    const rx = Math.round(R * (0.5 + 0.5 * f)), ry = 3, sx = Math.round(b.x), sy = this.FLOOR + 1;
+    for (let yy = -ry; yy <= ry; yy++) for (let xx = -rx; xx <= rx; xx++) {
+      if ((xx * xx) / (rx * rx) + (yy * yy) / (ry * ry) > 1) continue;
+      const px = sx + xx, py = sy + yy;
+      if (px >= 0 && px < 320 && ((px + py) & 1) === 0) P[py * 320 + px] = ST9[0];
+    }
+    this.drawBall();
+    // sine scroller
+    const L = SCROLL.length * 16, off = Math.floor(this.scroll) % L;
+    for (let x = 0; x < 320; x++) {
+      const col = (x + off) % L, ch = SCROLL.charCodeAt(col >> 4), bit = (col & 15) >> 1;
+      const yo = Math.round(2 * Math.sin((x + t * 3) * 0.04)), c = RAINBOW[((x >> 2) + t) & 31];
+      for (let r = 0; r < 8; r++) if ((FONT[ch * 8 + r] >> bit) & 1) { const y = 180 + yo + r * 2; P[y * 320 + x] = c; P[(y + 1) * 320 + x] = c; }
+    }
+  },
+  logo(t) {
+    const P = img32, s = "BOUNCE!", x0 = (320 - s.length * 32) >> 1, hl = ((t * 0.6) % 64) - 16;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let r = 0; r < 32; r++) {
+        const y = 8 + r + (pass ? 0 : 2), wob = Math.round(3 * Math.sin(t * 0.06 + r * 0.07)) + (pass ? 0 : 3);
+        const col = pass ? (Math.abs(r - hl) < 2 ? c9(7, 7, 7) : c9(...LOGO[r])) : ST9[0];
+        for (let i = 0; i < s.length; i++) {
+          const bits = FONT[s.charCodeAt(i) * 8 + (r >> 2)]; if (!bits) continue;
+          for (let bb = 0; bb < 8; bb++) if ((bits >> bb) & 1) {
+            const px = x0 + i * 32 + bb * 4 + wob;
+            for (let q = 0; q < 4; q++) { const xx = px + q; if (xx >= 0 && xx < 320) P[y * 320 + xx] = col; }
+          }
+        }
+      }
+    }
+  },
+  drawBall() {
+    const b = this.ball, R = this.R, P = img32, cx = Math.round(b.x), cy = Math.round(b.y);
+    const ca = Math.cos(-0.35), sa = Math.sin(-0.35), [lx, ly, lz] = LIGHT, lim = R * R + R * 0.6;
+    for (let dy = -R; dy <= R; dy++) {
+      const py = cy + dy; if (py < 0 || py >= 200) continue;
+      for (let dx = -R; dx <= R; dx++) {
+        if (dx * dx + dy * dy > lim) continue;
+        const px = cx + dx; if (px < 0 || px >= 320) continue;
+        const nx = dx / R, ny = dy / R, nz2 = 1 - nx * nx - ny * ny, nz = nz2 > 0 ? Math.sqrt(nz2) : 0;
+        const tx = nx * ca - ny * sa, ty = nx * sa + ny * ca;
+        let col;
+        if (Math.abs(ty) > 0.86) col = CAP;
+        else { let fr = ((Math.atan2(tx, nz) + b.rot) / TAU) % 1; if (fr < 0) fr += 1; col = SEG[(fr * 6) | 0]; }
+        const lam = Math.max(0, nx * lx + ny * ly + nz * lz), inten = 0.22 + 0.85 * lam, spec = Math.pow(lam, 28) * 6;
+        const th = BAYER[((py & 3) << 2) | (px & 3)];
+        P[py * 320 + px] = ST9[Math.min(7, Math.floor(col[0] * inten + spec + th)) * 64 +
+          Math.min(7, Math.floor(col[1] * inten + spec + th)) * 8 + Math.min(7, Math.floor(col[2] * inten + spec + th))];
+      }
+    }
+  },
+};
+
+/* ======================= Events, sizing, loop ======================= */
+function toLogical(e) {
+  const r = screenEl.getBoundingClientRect();
+  mx = clamp(Math.floor((e.clientX - r.left) / r.width * SW), 0, SW - 1);
+  my = clamp(Math.floor((e.clientY - r.top) / r.height * SH), 0, SH - 1);
+}
+screenEl.addEventListener("pointerdown", e => {
+  e.preventDefault(); screenEl.focus({ preventScroll: true });
+  try { screenEl.setPointerCapture(e.pointerId); } catch (_) {}
+  pointerIn = true; toLogical(e);
+  if (mode === "demo") { Demo.stop(); return; }
+  if (mode === "text") { mode = "desk"; return; }
+  onDown(e.shiftKey);
+});
+screenEl.addEventListener("pointermove", e => { toLogical(e); pointerIn = true; if (mode === "desk") onMove(); });
+screenEl.addEventListener("pointerup", e => { toLogical(e); if (mode === "desk") onUp(); });
+screenEl.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") pointerIn = false; });
+screenEl.addEventListener("pointercancel", () => { drag = null; if (dialog) dialog.pressed = null; });
+screenEl.addEventListener("contextmenu", e => e.preventDefault());
+
+const stage = document.getElementById("stage"), foot = document.getElementById("foot"), monitor = document.getElementById("monitor");
+const scanBtn = document.getElementById("scanBtn");
+let kbdNav = false;
+window.addEventListener("keydown", e => { if (e.key === "Tab") kbdNav = true; }, true);
+window.addEventListener("pointerdown", () => { kbdNav = false; }, true);
+screenEl.addEventListener("focus", () => monitor.classList.toggle("kbd", kbdNav));
+screenEl.addEventListener("blur", () => monitor.classList.remove("kbd"));
+let scanChosen = false;
+function setScan(on) { monitor.classList.toggle("flat", !on); scanBtn.textContent = on ? "Scanlines on" : "Scanlines off"; scanBtn.setAttribute("aria-pressed", String(on)); }
+scanBtn.addEventListener("click", () => { scanChosen = true; setScan(monitor.classList.contains("flat")); });
+function fit() {
+  const availW = stage.clientWidth - 32 - 24, availH = stage.clientHeight - 32 - foot.offsetHeight - 22 - 24;
+  const cssW = Math.max(200, Math.min(availW, availH * 1.6));
+  const dpr = window.devicePixelRatio || 1;
+  let devW = Math.round(cssW * dpr);
+  const k = devW / 640;
+  if (k >= 1 && Math.floor(k) / k >= 0.8) devW = Math.floor(k) * 640;
+  const devH = Math.round(devW * 10 / 16);
+  screenEl.width = devW; screenEl.height = devH;
+  screenEl.style.width = devW / dpr + "px"; screenEl.style.height = devH / dpr + "px";
+  if (!scanChosen) setScan(devH / dpr / 200 >= 2.2);
+}
+window.addEventListener("resize", fit);
+if (window.ResizeObserver) new ResizeObserver(fit).observe(stage);
+
+function frame(now) {
+  if (mode === "desk") {
+    if (drag && drag.kind === "repeat" && now >= drag.next && (!drag.btn || inR(drag.btn))) { drag.fn(); drag.next = now + 70; }
+    renderDesk(now); presentIndexed();
+  } else if (mode === "text") {
+    renderText(); presentIndexed();
+  } else {
+    Demo.update(now); Demo.render(); blit();
+  }
+  requestAnimationFrame(frame);
+}
+
+setRes(640, 200);
+loadDesktop();
+updatePal();
+fit();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
