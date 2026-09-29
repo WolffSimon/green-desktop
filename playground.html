@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Canvas playground</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* ---------- Tokens: light (default) ---------- */
+  :root {
+    --bg: #e6edf0;
+    --bg-rgb: 230 237 240;
+    --fg: #17202e;
+    --muted: #4d5b6c;
+    --panel: rgba(250, 252, 253, 0.72);
+    --panel-line: rgba(23, 32, 46, 0.12);
+    --btn-hover: rgba(23, 32, 46, 0.07);
+    --ink-l: 40;      /* stroke lightness, read by JS */
+    --ink-s: 78;      /* stroke saturation, read by JS */
+    --blend: source-over;
+    --accent: hsl(12 78% 44%);  /* overwritten live from the palette */
+
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10162a;
+      --bg-rgb: 16 22 42;
+      --fg: #eceaf6;
+      --muted: #a5a9c2;
+      --panel: rgba(22, 29, 54, 0.66);
+      --panel-line: rgba(236, 234, 246, 0.12);
+      --btn-hover: rgba(236, 234, 246, 0.08);
+      --ink-l: 62;
+      --ink-s: 88;
+      --blend: lighter;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #10162a;
+    --bg-rgb: 16 22 42;
+    --fg: #eceaf6;
+    --muted: #a5a9c2;
+    --panel: rgba(22, 29, 54, 0.66);
+    --panel-line: rgba(236, 234, 246, 0.12);
+    --btn-hover: rgba(236, 234, 246, 0.08);
+    --ink-l: 62;
+    --ink-s: 88;
+    --blend: lighter;
+    color-scheme: dark;
+  }
+
+  *, *::before, *::after { box-sizing: inherit; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); height: 100%; }
+  body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--fg);
+    font-family: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  canvas {
+    position: fixed; inset: 0; width: 100%; height: 100%;
+    display: block; touch-action: none; cursor: crosshair;
+  }
+
+  /* ---------- Header ---------- */
+  .top {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: calc(18px + env(safe-area-inset-top, 0px)) 20px 0;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+    pointer-events: none;
+  }
+  .title {
+    font-family: "Unbounded", "Arial Black", system-ui, sans-serif;
+    font-weight: 700; font-size: clamp(1.05rem, 2.4vw, 1.4rem);
+    letter-spacing: -0.01em; line-height: 1.1; margin: 0;
+  }
+  .top p, .title { text-shadow: 0 0 10px var(--bg), 0 0 3px var(--bg); }
+  .hint {
+    margin: 8px 0 0; max-width: 38ch;
+    font-size: 0.95rem; line-height: 1.45; color: var(--muted);
+  }
+  .keys { display: none; margin: 6px 0 0; font-size: 0.82rem; color: var(--muted); opacity: 0.85; }
+  @media (hover: hover) and (pointer: fine) { .keys { display: block; } }
+  .stats {
+    margin: 0; text-align: right; font-size: 0.82rem; line-height: 1.5;
+    color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+
+  /* ---------- Control bar ---------- */
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    padding: 0 12px calc(16px + env(safe-area-inset-bottom, 0px));
+    display: flex; justify-content: center; pointer-events: none;
+  }
+  .bar-inner {
+    pointer-events: auto;
+    display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px;
+    padding: 6px; border-radius: 18px;
+    background: var(--panel); border: 1px solid var(--panel-line);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4);
+    max-width: 100%;
+  }
+  .seg { display: flex; gap: 2px; padding: 2px; border-radius: 13px; background: var(--btn-hover); }
+  button {
+    font: inherit; color: var(--fg); background: transparent; border: 0;
+    padding: 9px 14px; border-radius: 11px; cursor: pointer;
+    font-size: 0.92rem; line-height: 1; white-space: nowrap;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  button:hover { background: var(--btn-hover); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .seg button {
+    font-family: "Unbounded", "Arial Black", system-ui, sans-serif;
+    font-weight: 500; font-size: 0.8rem; padding: 10px 14px;
+  }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .swatch {
+    display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+    margin-right: 8px; vertical-align: -1px;
+    background: conic-gradient(var(--sw0), var(--sw1), var(--sw2), var(--sw3), var(--sw0));
+  }
+
+  /* ---------- Toast ---------- */
+  .toast {
+    position: fixed; left: 50%; bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+    transform: translate(-50%, 8px); opacity: 0;
+    padding: 8px 14px; border-radius: 10px;
+    background: var(--panel); border: 1px solid var(--panel-line);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    font-size: 0.88rem; pointer-events: none; white-space: nowrap;
+    transition: opacity 180ms ease, transform 180ms ease;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  @media (max-width: 520px) {
+    .top { padding-left: 14px; padding-right: 14px; }
+    .hint { font-size: 0.88rem; max-width: 30ch; }
+    .bar-inner { gap: 4px; }
+    button { padding: 9px 11px; }
+    .seg button { padding: 10px 11px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    button, .toast { transition: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="Interactive generative animation"></canvas>
+
+<header class="top">
+  <div>
+    <h1 class="title">Canvas playground</h1>
+    <p class="hint" id="hint"></p>
+    <p class="keys">Keys: 1, 2 and 3 switch scenes, P changes palette, space pauses.</p>
+  </div>
+  <p class="stats" id="stats" aria-live="off"></p>
+</header>
+
+<nav class="bar" aria-label="Animation controls">
+  <div class="bar-inner">
+    <div class="seg" role="group" aria-label="Scene">
+      <button data-scene="flow" aria-pressed="true">Flow</button>
+      <button data-scene="flock" aria-pressed="false">Flock</button>
+      <button data-scene="knot" aria-pressed="false">Knot</button>
+    </div>
+    <button id="pal" aria-label="Change palette"><span class="swatch"></span><span id="palName">Ember</span></button>
+    <button id="pause">Pause</button>
+  </div>
+</nav>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+  "use strict";
+  const TAU = Math.PI * 2;
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+  const $hint = document.getElementById("hint");
+  const $stats = document.getElementById("stats");
+  const $toast = document.getElementById("toast");
+  const $pause = document.getElementById("pause");
+  const $palName = document.getElementById("palName");
+  const root = document.documentElement;
+
+  let W = 0, H = 0, DPR = 1;
+
+  /* ================= Theme ================= */
+  const theme = { bg: [16, 22, 42], l: 62, s: 88, blend: "lighter" };
+  function readTheme() {
+    const cs = getComputedStyle(root);
+    const rgb = cs.getPropertyValue("--bg-rgb").trim().split(/\s+/).map(Number);
+    if (rgb.length === 3 && rgb.every(n => !isNaN(n))) theme.bg = rgb;
+    theme.l = parseFloat(cs.getPropertyValue("--ink-l")) || 50;
+    theme.s = parseFloat(cs.getPropertyValue("--ink-s")) || 80;
+    theme.blend = cs.getPropertyValue("--blend").trim() || "source-over";
+  }
+  // The canvas stays transparent over the page background. Fading with
+  // destination-out avoids the grey "ghost trails" that a translucent
+  // background fill leaves behind on 8-bit canvases.
+  let fadeTick = 0;
+  function bgFill(a) {
+    if (a >= 1) { ctx.clearRect(0, 0, W, H); return; }
+    ctx.globalCompositeOperation = "destination-out";
+    // every so often, a slightly stronger pass mops up the last faint residue
+    const extra = (++fadeTick % 45 === 0) ? 0.12 : 0;
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(1, a + extra)})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  /* ================= Palettes ================= */
+  const PALETTES = [
+    { name: "Ember",  hues: [12, 32, 350, 46] },
+    { name: "Lagoon", hues: [178, 198, 158, 218] },
+    { name: "Aurora", hues: [145, 280, 190, 320] },
+    { name: "Voltage",hues: [300, 195, 55, 330] },
+    { name: "Dusk",   hues: [258, 228, 18, 296] },
+  ];
+  let palIdx = 0;
+  const hue = i => PALETTES[palIdx].hues[((i % 4) + 4) % 4];
+  const col = (h, a, dl = 0) => `hsla(${h},${theme.s}%,${Math.max(8, Math.min(92, theme.l + dl))}%,${a})`;
+  function applyPaletteToUI() {
+    const p = PALETTES[palIdx];
+    $palName.textContent = p.name;
+    root.style.setProperty("--accent", `hsl(${p.hues[0]} 72% 46%)`);
+    p.hues.forEach((h, i) => root.style.setProperty(`--sw${i}`, `hsl(${h} 80% 55%)`));
+  }
+
+  /* ================= Perlin noise (improved, 3D) ================= */
+  const perm = new Uint8Array(512);
+  function seedNoise(seed) {
+    const p = Array.from({ length: 256 }, (_, i) => i);
+    let s = (seed % 2147483646) + 1;
+    for (let i = 255; i > 0; i--) {
+      s = (s * 16807) % 2147483647;
+      const j = s % (i + 1);
+      [p[i], p[j]] = [p[j], p[i]];
+    }
+    for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+  }
+  const fade = t => t * t * t * (t * (t * 6 - 15) + 10);
+  const lerp = (a, b, t) => a + t * (b - a);
+  function grad(h, x, y, z) {
+    h &= 15;
+    const u = h < 8 ? x : y;
+    const v = h < 4 ? y : (h === 12 || h === 14 ? x : z);
+    return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
+  }
+  function noise3(x, y, z) {
+    const fx = Math.floor(x), fy = Math.floor(y), fz = Math.floor(z);
+    const X = fx & 255, Y = fy & 255, Z = fz & 255;
+    x -= fx; y -= fy; z -= fz;
+    const u = fade(x), v = fade(y), w = fade(z);
+    const A = perm[X] + Y, AA = perm[A] + Z, AB = perm[A + 1] + Z;
+    const B = perm[X + 1] + Y, BA = perm[B] + Z, BB = perm[B + 1] + Z;
+    return lerp(
+      lerp(lerp(grad(perm[AA], x, y, z), grad(perm[BA], x - 1, y, z), u),
+           lerp(grad(perm[AB], x, y - 1, z), grad(perm[BB], x - 1, y - 1, z), u), v),
+      lerp(lerp(grad(perm[AA + 1], x, y, z - 1), grad(perm[BA + 1], x - 1, y, z - 1), u),
+           lerp(grad(perm[AB + 1], x, y - 1, z - 1), grad(perm[BB + 1], x - 1, y - 1, z - 1), u), v), w);
+  }
+
+  /* ================= Pointer ================= */
+  const pointer = { x: -1e4, y: -1e4, inside: false, down: false, moved: 0, t0: 0 };
+  canvas.addEventListener("pointerdown", e => {
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    Object.assign(pointer, { down: true, inside: true, x: e.clientX, y: e.clientY, moved: 0, t0: performance.now() });
+  });
+  canvas.addEventListener("pointermove", e => {
+    const dx = e.clientX - pointer.x, dy = e.clientY - pointer.y;
+    pointer.x = e.clientX; pointer.y = e.clientY; pointer.inside = true;
+    if (pointer.down) {
+      pointer.moved += Math.abs(dx) + Math.abs(dy);
+      scene.onDrag && scene.onDrag(dx, dy);
+    }
+  });
+  canvas.addEventListener("pointerup", e => {
+    if (pointer.down && pointer.moved < 10 && performance.now() - pointer.t0 < 450) {
+      scene.onTap && scene.onTap(e.clientX, e.clientY);
+    }
+    pointer.down = false;
+    if (e.pointerType !== "mouse") pointer.inside = false;
+  });
+  canvas.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") pointer.inside = false; });
+  canvas.addEventListener("pointercancel", () => { pointer.down = false; pointer.inside = false; });
+
+  /* ================= Scene 1: Flow field ================= */
+  const Flow = {
+    hint: "Over a thousand particles surf a slowly shifting Perlin-noise field. Move through them to part the stream; tap to send a shockwave and reshape the field.",
+    init() {
+      seedNoise((Math.random() * 2e9) | 0);
+      this.z = Math.random() * 50;
+      this.scale = 0.0018 + Math.random() * 0.0014;
+      this.shock = null;
+      const n = Math.round(Math.min(3600, Math.max(900, (W * H) / 260)));
+      this.ps = Array.from({ length: n }, (_, i) => this.spawn({}, i % 4));
+      bgFill(1);
+    },
+    count() { return this.ps.length; },
+    unit: "particles",
+    spawn(p, h) {
+      p.x = Math.random() * W; p.y = Math.random() * H;
+      p.px = p.x; p.py = p.y;
+      p.life = 60 + Math.random() * 240;
+      p.v = 0.7 + Math.random() * 1.1;
+      p.h = h;
+      return p;
+    },
+    step(dt) {
+      bgFill(0.075);
+      this.z += 0.0022 * dt;
+      const s = this.scale, z = this.z, R = 130, R2 = R * R;
+      const paths = [new Path2D(), new Path2D(), new Path2D(), new Path2D()];
+      const sh = this.shock;
+      if (sh) { sh.r += 11 * dt; if (sh.r > Math.hypot(W, H)) this.shock = null; }
+
+      for (const p of this.ps) {
+        const a = noise3(p.x * s, p.y * s, z) * TAU * 2;
+        let vx = Math.cos(a) * p.v * 1.7, vy = Math.sin(a) * p.v * 1.7;
+
+        if (pointer.inside) {
+          const dx = p.x - pointer.x, dy = p.y - pointer.y, d2 = dx * dx + dy * dy;
+          if (d2 < R2) {
+            const d = Math.sqrt(d2) || 1, f = (1 - d / R) * (pointer.down ? 7 : 4);
+            vx += (dx / d) * f; vy += (dy / d) * f;
+          }
+        }
+        if (sh) {
+          const dx = p.x - sh.x, dy = p.y - sh.y, d = Math.hypot(dx, dy) || 1;
+          const band = Math.abs(d - sh.r);
+          if (band < 36) { const f = (1 - band / 36) * 5; vx += (dx / d) * f; vy += (dy / d) * f; }
+        }
+
+        p.px = p.x; p.py = p.y;
+        p.x += vx * dt; p.y += vy * dt; p.life -= dt;
+        if (p.life <= 0 || p.x < -4 || p.x > W + 4 || p.y < -4 || p.y > H + 4) { this.spawn(p, p.h); continue; }
+        const path = paths[p.h];
+        path.moveTo(p.px, p.py); path.lineTo(p.x, p.y);
+      }
+
+      ctx.globalCompositeOperation = theme.blend;
+      ctx.lineWidth = 1.15; ctx.lineCap = "round";
+      for (let k = 0; k < 4; k++) { ctx.strokeStyle = col(hue(k), 0.55); ctx.stroke(paths[k]); }
+    },
+    onTap(x, y) {
+      this.shock = { x, y, r: 0 };
+      this.z += 3.7;
+      this.scale = 0.0016 + Math.random() * 0.0018;
+    },
+  };
+
+  /* ================= Scene 2: Flocking boids ================= */
+  const Flock = {
+    hint: "A few hundred boids, each following three rules: keep apart, match heading, stay together. Hover to play predator; press and hold to call them in.",
+    unit: "boids",
+    init() {
+      const n = Math.round(Math.min(340, Math.max(110, (W * H) / 3000)));
+      this.b = Array.from({ length: n }, (_, i) => {
+        const a = Math.random() * TAU;
+        return { x: Math.random() * W, y: Math.random() * H, vx: Math.cos(a) * 2, vy: Math.sin(a) * 2, ax: 0, ay: 0, h: i % 4 };
+      });
+      bgFill(1);
+    },
+    count() { return this.b.length; },
+    step(dt) {
+      bgFill(0.2);
+      const B = this.b, n = B.length;
+      const VIEW = 58, VIEW2 = VIEW * VIEW, SEP = 20, SEP2 = SEP * SEP, MAX = 3.3, MIN = 1.3;
+
+      for (let i = 0; i < n; i++) {
+        const a = B[i];
+        let cx = 0, cy = 0, mx = 0, my = 0, sx = 0, sy = 0, c = 0;
+        for (let j = 0; j < n; j++) {
+          if (i === j) continue;
+          const o = B[j], dx = o.x - a.x, dy = o.y - a.y, d2 = dx * dx + dy * dy;
+          if (d2 < VIEW2) {
+            c++; cx += o.x; cy += o.y; mx += o.vx; my += o.vy;
+            if (d2 < SEP2) { const d = Math.sqrt(d2) || 0.01; sx -= (dx / d) * (SEP / d); sy -= (dy / d) * (SEP / d); }
+          }
+        }
+        let fx = 0, fy = 0;
+        if (c) {
+          cx /= c; cy /= c; mx /= c; my /= c;
+          fx += (cx - a.x) * 0.0028 + (mx - a.vx) * 0.055;
+          fy += (cy - a.y) * 0.0028 + (my - a.vy) * 0.055;
+        }
+        fx += sx * 0.045 + (Math.random() - 0.5) * 0.06;
+        fy += sy * 0.045 + (Math.random() - 0.5) * 0.06;
+
+        if (pointer.inside) {
+          const dx = a.x - pointer.x, dy = a.y - pointer.y, d = Math.hypot(dx, dy) || 1;
+          if (pointer.down) {
+            if (d < 520) { fx -= (dx / d) * 0.16; fy -= (dy / d) * 0.16; }
+          } else if (d < 150) {
+            const f = (1 - d / 150) * 1.1; fx += (dx / d) * f; fy += (dy / d) * f;
+          }
+        }
+        a.ax = fx; a.ay = fy;
+      }
+
+      const paths = [new Path2D(), new Path2D(), new Path2D(), new Path2D()];
+      for (const a of B) {
+        a.vx += a.ax * dt; a.vy += a.ay * dt;
+        let sp = Math.hypot(a.vx, a.vy) || 0.001;
+        const clamped = Math.min(MAX, Math.max(MIN, sp));
+        a.vx *= clamped / sp; a.vy *= clamped / sp; sp = clamped;
+        a.x += a.vx * dt; a.y += a.vy * dt;
+        if (a.x < -10) a.x += W + 20; else if (a.x > W + 10) a.x -= W + 20;
+        if (a.y < -10) a.y += H + 20; else if (a.y > H + 10) a.y -= H + 20;
+
+        const c = a.vx / sp, s = a.vy / sp, L = 7.5, Wd = 3.3, back = L * 0.6;
+        const path = paths[a.h];
+        path.moveTo(a.x + c * L, a.y + s * L);
+        path.lineTo(a.x - c * back - s * Wd, a.y - s * back + c * Wd);
+        path.lineTo(a.x - c * back * 0.4, a.y - s * back * 0.4);
+        path.lineTo(a.x - c * back + s * Wd, a.y - s * back - c * Wd);
+        path.closePath();
+      }
+      ctx.globalCompositeOperation = theme.blend;
+      for (let k = 0; k < 4; k++) { ctx.fillStyle = col(hue(k), 0.9); ctx.fill(paths[k]); }
+
+      if (pointer.inside && pointer.down) {
+        ctx.globalCompositeOperation = "source-over";
+        ctx.strokeStyle = col(hue(0), 0.35);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(pointer.x, pointer.y, 22 + 4 * Math.sin(performance.now() / 180), 0, TAU); ctx.stroke();
+      }
+    },
+  };
+
+  /* ================= Scene 3: Torus knot point cloud ================= */
+  const KNOTS = [
+    { p: 2, q: 3, name: "Trefoil (2, 3)" },
+    { p: 3, q: 5, name: "Torus knot (3, 5)" },
+    { p: 2, q: 5, name: "Cinquefoil (2, 5)" },
+    { p: 3, q: 7, name: "Torus knot (3, 7)" },
+    { p: 5, q: 2, name: "Torus knot (5, 2)" },
+  ];
+  const M = 240, K = 12, NPTS = M * K;
+
+  function buildKnot(p, q, outC, outO) {
+    const P = (phi) => {
+      const r = Math.cos(q * phi) + 2;
+      return [r * Math.cos(p * phi), r * Math.sin(p * phi), -Math.sin(q * phi)];
+    };
+    for (let i = 0; i < M; i++) {
+      const phi = (i / M) * TAU;
+      const c = P(phi), c2 = P(phi + 0.001);
+      let tx = c2[0] - c[0], ty = c2[1] - c[1], tz = c2[2] - c[2];
+      let tl = Math.hypot(tx, ty, tz); tx /= tl; ty /= tl; tz /= tl;
+      // radial direction away from the torus core, orthogonalised against tangent
+      let rx = c[0] - 2 * Math.cos(p * phi), ry = c[1] - 2 * Math.sin(p * phi), rz = c[2];
+      const dot = rx * tx + ry * ty + rz * tz;
+      rx -= dot * tx; ry -= dot * ty; rz -= dot * tz;
+      const rl = Math.hypot(rx, ry, rz) || 1; rx /= rl; ry /= rl; rz /= rl;
+      const bx = ty * rz - tz * ry, by = tz * rx - tx * rz, bz = tx * ry - ty * rx;
+      for (let k = 0; k < K; k++) {
+        const th = (k / K) * TAU, ct = Math.cos(th), st = Math.sin(th);
+        const idx = (i * K + k) * 3;
+        outC[idx] = c[0]; outC[idx + 1] = c[1]; outC[idx + 2] = c[2];
+        outO[idx] = rx * ct + bx * st; outO[idx + 1] = ry * ct + by * st; outO[idx + 2] = rz * ct + bz * st;
+      }
+    }
+  }
+
+  const Knot = {
+    hint: "Nearly 3,000 points on a torus knot, rotated and projected into 2D by hand, no 3D library. Drag to spin it; tap to morph into the next knot.",
+    unit: "points",
+    count() { return NPTS; },
+    init() {
+      if (!this.C) {
+        this.C = new Float32Array(NPTS * 3); this.O = new Float32Array(NPTS * 3);
+        this.C0 = new Float32Array(NPTS * 3); this.O0 = new Float32Array(NPTS * 3);
+        this.C1 = new Float32Array(NPTS * 3); this.O1 = new Float32Array(NPTS * 3);
+        this.k = 0;
+        buildKnot(KNOTS[0].p, KNOTS[0].q, this.C, this.O);
+        this.rx = 0.5; this.ry = 0; this.vx = 0; this.vy = 0;
+      }
+      this.morph = null;
+      this.t = 0;
+      bgFill(1);
+    },
+    onDrag(dx, dy) { this.vy = dx * 0.006; this.vx = dy * 0.006; },
+    onTap() {
+      this.k = (this.k + 1) % KNOTS.length;
+      this.C0.set(this.C); this.O0.set(this.O);
+      buildKnot(KNOTS[this.k].p, KNOTS[this.k].q, this.C1, this.O1);
+      this.morph = 0;
+      toast(KNOTS[this.k].name);
+    },
+    step(dt) {
+      bgFill(0.32);
+      this.t += 0.016 * dt;
+
+      if (this.morph !== null) {
+        this.morph = Math.min(1, this.morph + 0.018 * dt);
+        const m = this.morph, e = m < 0.5 ? 4 * m * m * m : 1 - Math.pow(-2 * m + 2, 3) / 2;
+        for (let i = 0; i < NPTS * 3; i++) {
+          this.C[i] = this.C0[i] + (this.C1[i] - this.C0[i]) * e;
+          this.O[i] = this.O0[i] + (this.O1[i] - this.O0[i]) * e;
+        }
+        if (m >= 1) this.morph = null;
+      }
+
+      this.ry += (0.0045 + this.vy) * dt;
+      this.rx += this.vx * dt;
+      const decay = Math.pow(0.94, dt);
+      this.vx *= decay; this.vy *= decay;
+
+      const cy = Math.cos(this.ry), sy = Math.sin(this.ry), cx = Math.cos(this.rx), sx = Math.sin(this.rx);
+      const scale = Math.min(W, H) * 0.13, D = 7.5, ox = W / 2, oy = H / 2;
+      const buckets = Array.from({ length: 16 }, () => new Path2D());
+      const shift = this.t * 0.35;
+
+      for (let i = 0; i < M; i++) {
+        const phi = (i / M) * TAU;
+        const rad = 0.3 * (1 + 0.45 * Math.sin(phi * 6 - this.t * 2.2));
+        const hIdx = Math.floor(((i / M) * 4 + shift) % 4);
+        for (let k = 0; k < K; k++) {
+          const idx = (i * K + k) * 3;
+          const x0 = this.C[idx] + this.O[idx] * rad;
+          const y0 = this.C[idx + 1] + this.O[idx + 1] * rad;
+          const z0 = this.C[idx + 2] + this.O[idx + 2] * rad;
+          // rotate about Y, then X
+          const x1 = x0 * cy + z0 * sy, z1 = -x0 * sy + z0 * cy;
+          const y2 = y0 * cx - z1 * sx, z2 = y0 * sx + z1 * cx;
+          const persp = D / (D - z2);
+          const X = ox + x1 * scale * persp, Y = oy + y2 * scale * persp;
+          const depth = Math.max(0, Math.min(3, Math.floor(((z2 + 3.4) / 6.8) * 4)));
+          const r = (0.7 + depth * 0.45) * persp * Math.min(1.4, scale / 70);
+          const path = buckets[depth * 4 + hIdx];
+          path.moveTo(X + r, Y); path.arc(X, Y, r, 0, TAU);
+        }
+      }
+
+      ctx.globalCompositeOperation = theme.blend;
+      const alphas = [0.22, 0.4, 0.62, 0.9], dls = [-12, -5, 2, 8];
+      for (let d = 0; d < 4; d++) {
+        for (let h = 0; h < 4; h++) {
+          ctx.fillStyle = col(hue(h), alphas[d], dls[d]);
+          ctx.fill(buckets[d * 4 + h]);
+        }
+      }
+    },
+  };
+
+  /* ================= Plumbing ================= */
+  const SCENES = { flow: Flow, flock: Flock, knot: Knot };
+  let scene = Flow, sceneKey = "flow";
+
+  function setScene(key) {
+    if (!SCENES[key]) return;
+    sceneKey = key; scene = SCENES[key];
+    document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.scene === key)));
+    $hint.textContent = scene.hint;
+    scene.init();
+  }
+
+  function resize() {
+    DPR = Math.min(2, window.devicePixelRatio || 1);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+
+  let toastTimer = 0;
+  function toast(msg) {
+    $toast.textContent = msg; $toast.classList.add("show");
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => $toast.classList.remove("show"), 1400);
+  }
+
+  let paused = false;
+  function setPaused(p) {
+    paused = p;
+    $pause.textContent = p ? "Play" : "Pause";
+  }
+
+  function nextPalette() {
+    palIdx = (palIdx + 1) % PALETTES.length;
+    applyPaletteToUI();
+    toast(`Palette: ${PALETTES[palIdx].name}`);
+  }
+
+  document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setScene(b.dataset.scene)));
+  document.getElementById("pal").addEventListener("click", nextPalette);
+  $pause.addEventListener("click", () => setPaused(!paused));
+  window.addEventListener("keydown", e => {
+    if (e.target && e.target.tagName === "BUTTON" && (e.key === " " || e.key === "Enter")) return;
+    if (e.key === "1") setScene("flow");
+    else if (e.key === "2") setScene("flock");
+    else if (e.key === "3") setScene("knot");
+    else if (e.key === "p" || e.key === "P") nextPalette();
+    else if (e.key === " ") { e.preventDefault(); setPaused(!paused); }
+  });
+
+  let resizeTimer = 0;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { resize(); scene.init(); }, 120);
+  });
+
+  const onThemeChange = () => { readTheme(); };
+  try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", onThemeChange); } catch (_) {}
+  new MutationObserver(onThemeChange).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+
+  // Boot
+  readTheme();
+  resize();
+  applyPaletteToUI();
+  setScene("flow");
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    setPaused(true);
+    Flow.step(1);
+    toast("Reduced motion is on, press Play to start");
+  }
+
+  let last = performance.now(), fAcc = 0, fN = 0, fps = 60;
+  function frame(now) {
+    const el = now - last; last = now;
+    if (!paused) scene.step(Math.min(3, el / 16.667));
+    fAcc += el; fN++;
+    if (fAcc > 500) {
+      fps = Math.round((fN * 1000) / fAcc); fAcc = 0; fN = 0;
+      $stats.innerHTML = `${scene.count().toLocaleString()} ${scene.unit}<br>${paused ? "paused" : fps + " fps"}`;
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
